@@ -1,0 +1,60 @@
+apiVersion: v1
+entries:
+  gerrit:
+  - apiVersion: v2
+    appVersion: 3.6.2
+    created: "2023-02-17T13:38:59.201702208Z"
+    description: Gerrit is a free, web-based team code collaboration tool. Software
+      developers in a team can review each other's modifications on their source code
+      using a Web browser and approve or reject those changes. It integrates closely
+      with Git, a distributed version control system. [1]  [1](https://en.wikipedia.org/wiki/Gerrit_(software)
+    digest: 92642db6e743c7643e277f80fdd0f176c48c0bb0dc8ec429ab3e22fb5d4c22c6
+    home: https://gerrit.googlesource.com/k8s-gerrit/+/master/helm-charts/gerrit-replica
+    icon: http://commondatastorage.googleapis.com/gerrit-static/diffy-w200.png
+    keywords:
+    - gerrit
+    - git
+    maintainers:
+    - email: thomas.draebing@sap.com
+      name: Thomas Draebing
+    - email: matthias.sohn@sap.com
+      name: Matthias Sohn
+    - email: sasa.zivkov@sap.com
+      name: Sasa Zivkov
+    - email: christian.halstrick@sap.com
+      name: Christian Halstrick
+    name: gerrit
+    sources:
+    - https://gerrit.googlesource.com/k8s-gerrit/+/master/
+    urls:
+    - https://github.com/Bonial-International-GmbH/k8s-gerrit/releases/download/gerrit-0.2.0/gerrit-0.2.0.tgz
+    version: 0.2.0
+  gerrit-replica:
+  - apiVersion: v2
+    appVersion: 3.6.2
+    created: "2023-02-17T13:38:59.348419677Z"
+    description: The Gerrit replica serves as a read-only Gerrit instance to serve
+      repositories that it receives from a Gerrit instance via replication. It can
+      be used to reduce the load on Gerrit instances.
+    digest: b56eec21a520dec7f9041dc57584b4fc6988166834753f148c1a9a0dcdf2870c
+    home: https://gerrit.googlesource.com/k8s-gerrit/+/master/helm-charts/gerrit-replica
+    icon: http://commondatastorage.googleapis.com/gerrit-static/diffy-w200.png
+    keywords:
+    - gerrit
+    - git
+    maintainers:
+    - email: thomas.draebing@sap.com
+      name: Thomas Draebing
+    - email: matthias.sohn@sap.com
+      name: Matthias Sohn
+    - email: sasa.zivkov@sap.com
+      name: Sasa Zivkov
+    - email: christian.halstrick@sap.com
+      name: Christian Halstrick
+    name: gerrit-replica
+    sources:
+    - https://gerrit.googlesource.com/k8s-gerrit/+/master
+    urls:
+    - https://github.com/Bonial-International-GmbH/k8s-gerrit/releases/download/gerrit-replica-0.2.0/gerrit-replica-0.2.0.tgz
+    version: 0.2.0
+generated: "2023-02-17T13:38:59.348498477Z"
