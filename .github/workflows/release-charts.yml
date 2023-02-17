@@ -3,7 +3,7 @@ name: release-charts
 on:
   push:
     # Release changed helm charts from `charts/` whenever a
-    # merge/push into `main` occurs.
+    # merge/push into `master` occurs.
     #
     # The packaged charts are stored in the `gh-pages` branch, the helm
     # repository is served via GitHub Pages.
