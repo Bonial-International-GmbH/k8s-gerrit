@@ -197,7 +197,9 @@ gerrit:
     #         app: git-backend
 
   service:
+    additionalAnnotations: {}
     type: NodePort
+    externalTrafficPolicy: Cluster
     http:
       port: 80
     ssh:
