@@ -3,10 +3,15 @@ kind: Service
 metadata:
   name: {{ .Release.Name }}-gerrit-service
   labels:
-    app: gerrit
+    app.kubernetes.io/component: gerrit
+    app.kubernetes.io/instance: {{ .Release.Name }}
     chart: {{ template "gerrit.chart" . }}
     heritage: {{ .Release.Service }}
     release: {{ .Release.Name }}
+  {{- if .Values.gerrit.service.additionalAnnotations }}
+  annotations:
+{{ toYaml .Values.gerrit.service.additionalAnnotations  | indent 4 }}
+  {{- end }}
 spec:
   {{ with .Values.gerrit.service }}
   ports:
@@ -18,7 +23,10 @@ spec:
     port: {{ .ssh.port }}
     targetPort: 29418
   {{- end }}
-  selector:
-    app: gerrit
   type: {{ .type }}
+  externalTrafficPolicy: {{ .externalTrafficPolicy }}
   {{- end }}
+  selector:
+    app.kubernetes.io/component: gerrit
+    app.kubernetes.io/instance: {{ .Release.Name }}
+
