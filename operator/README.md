@@ -5,10 +5,15 @@
 To build all components of the operator run:
 
 ```sh
-# With E2E tests
-mvn clean install jib:dockerBuild
-# Without E2E tests
-mvn clean install -DskipTests jib:dockerBuild
+mvn clean install
+```
+
+## Publish
+
+To publish the container image of the Gerrit Operator run:
+
+```sh
+mvn clean install -P publish
 ```
 
 ## Tests
@@ -54,8 +59,17 @@ In addition, some properties have to be set to configure the tests:
 - `gerritPwd`: The password of `gerritUser`
 
 The properties should be set in the `test.properties` file. Alternatively, a
-path of a properties file can be configured by using
-`mvn clean install -Dproperties=<path to properties file> $TARGET`
+path of a properties file can be configured by using the
+`-Dproperties=<path to properties file>`-option.
+
+To run all E2E tests, use:
+
+```sh
+mvn clean install -P integration-test -Dproperties=<path to properties file>
+```
+
+Note, that running the E2E tests will also involve pushing the container image
+to the repository configured in the properties file.
 
 ## Deploy
 
@@ -67,6 +81,24 @@ kubectl apply -f target/classes/META-INF/fabric8/*-v1.yml
 
 Note that these do not include the -v1beta1.yaml files, as those are for old
 Kubernetes versions.
+
+The operator requires a Java Keystore with a keypair inside to allow TLS
+verification for Kubernetes Admission Webhooks. To create a keystore and
+encode it with base64, run:
+
+```sh
+keytool \
+  -genkeypair \
+  -alias operator \
+  -keystore keystore \
+  -keyalg RSA \
+  -keysize 2048 \
+  -validity 3650
+cat keystore | base64 -b 0
+```
+
+Add the result to the Secret in `k8s/operator.yaml` (see comments in the file)
+and also add the base64-encoded password for the keystore to the secret.
 
 Then the operator and associated RBAC rules can be deployed:
 
@@ -407,33 +439,22 @@ spec:
   configFiles:
     gerrit.config: |-
         [gerrit]
-          basePath = git
           serverId = gerrit-1
-          canonicalWebUrl = http://example.com/
           disableReverseDnsLookup = true
         [index]
           type = LUCENE
-          onlineUpgrade = false
         [auth]
           type = DEVELOPMENT_BECOME_ANY_ACCOUNT
         [httpd]
-          listenUrl = proxy-http://*:8080/
           requestLog = true
           gracefulStopTimeout = 1m
-        [sshd]
-          listenAddress = off
         [transfer]
           timeout = 120 s
         [user]
           name = Gerrit Code Review
           email = gerrit@example.com
           anonymousCoward = Unnamed User
-        [cache]
-          directory = cache
         [container]
-          user = gerrit
-          javaHome = /usr/lib/jvm/java-11-openjdk
-          javaOptions = -Djavax.net.ssl.trustStore=/var/gerrit/etc/keystore
           javaOptions = -Xms200m
           javaOptions = -Xmx4g
 
@@ -442,6 +463,58 @@ spec:
   secrets: []
   # - gerrit-secure-config
 ```
+
+#### Prohibited options in gerrit.config
+
+Some options in the gerrit.config are not allowed to be changed. Their values
+are preset by the containers/Kubernetes. The operator will configure those options
+automatically and won't allow different values, i.e. it will fail to reconcile
+if a value is set to an illegal value. These options are:
+
+- `cache.directory`
+
+    This should stay in the volume mounted to contain the Gerrit site and will
+    thus be set to `cache`.
+
+- `container.javaHome`
+
+    This has to be set to `/usr/lib/jvm/java-11-openjdk-amd64`, since this is
+    the path of the Java installation in the container.
+
+- `container.javaOptions = -Djavax.net.ssl.trustStore`
+
+    The keystore will be mounted to `/var/gerrit/etc/keystore`.
+
+- `container.replica`
+
+    This has to be set in the Gerrit-CustomResource under `spec.isReplica`.
+
+- `container.user`
+
+    The technical user in the Gerrit container is called `gerrit`.
+
+- `gerrit.basePath`
+
+    The git repositories are mounted to `/var/gerrit/git` in the container.
+
+- `gerrit.canonicalWebUrl`
+
+    The canonical web URL has to be set to the hostname used by the Ingress/Istio.
+
+- `httpd.listenURL`
+
+    This has to be set to `proxy-http://*:8080/` or `proxy-https://*:8080`,
+    depending of TLS is enabled in the Ingress or not, otherwise the Jetty
+    servlet will run into an endless redirect loop.
+
+- `sshd.advertisedAddress`
+
+    This is only enforced, if Istio is enabled. It can be configured otherwise.
+
+- `sshd.listenAddress`
+
+    Since the container port for SSH is fixed, this will be set automatically.
+    If no SSH port is configured in the service, the SSHD is disabled.
 
 ### GitGarbageCollection
 
