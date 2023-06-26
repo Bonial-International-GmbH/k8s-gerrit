@@ -89,6 +89,12 @@ helm install \
 | `images.imagePullPolicy` | Image pull policy | `Always` |
 | `images.additionalImagePullSecrets` | Additional image pull policies that pods should use | `[]` |
 
+### Labels
+
+| Parameter | Description | Default |
+|-----------|-------------|---------|
+| `additionalLabels` | Additional labels for resources managed by this Helm chart | `{}` |
+
 ### Storage classes
 
 For information of how a `StorageClass` is configured in Kubernetes, read the
@@ -207,6 +213,7 @@ read-write-many volume to be able to be used by multiple pods.
 | `logStorage.cleanup.schedule` | Cron schedule defining when to run the cleanup job | `0 0 * * *` |
 | `logStorage.cleanup.retentionDays` | Number of days to retain the logs | `14` |
 | `logStorage.cleanup.resources` | Resources the container is allowed to use | `requests.cpu: 100m` |
+| `logStorage.cleanup.additionalPodLabels` | Additional labels for pods | `{}` |
 | | | `requests.memory: 256Mi` |
 | | | `limits.cpu: 100m` |
 | | | `limits.memory: 256Mi` |
@@ -255,7 +262,9 @@ configured to gracefully close the connections as well.
 | `gitGC.logging.persistence.enabled` | Whether to persist logs | `true` |
 | `gitGC.logging.persistence.size` | Storage size for persisted logs | `1Gi` |
 | `gitGC.tolerations` | Taints and tolerations work together to ensure that pods are not scheduled onto inappropriate nodes. For more information, please refer to the following documents. [Taints and Tolerations](https://kubernetes.io/docs/concepts/scheduling-eviction/taint-and-toleration) | [] |
+| `gitGC.nodeSelector` | Assigns a Pod to the specified Nodes. For more information, please refer to the following documents. [Assign Pods to Nodes](https://kubernetes.io/docs/tasks/configure-pod-container/assign-pods-nodes/). [Assigning Pods to Nodes](https://kubernetes.io/docs/concepts/scheduling-eviction/assign-pod-node/) | {} |
 | `gitGC.affinity` | Assigns a Pod to the specified Nodes. For more information, please refer to the following documents. [Assign Pods to Nodes using Node Affinity](https://kubernetes.io/docs/tasks/configure-pod-container/assign-pods-nodes-using-node-affinity/). [Assigning Pods to Nodes](https://kubernetes.io/docs/concepts/scheduling-eviction/assign-pod-node/) | {} |
+| `gitGC.additionalPodLabels` | Additional labels for Pods | `{}` |
 
 ### Gerrit
 
@@ -284,10 +293,11 @@ future.
 | `gerrit.images.gerritInit` | Image name of the Gerrit init container image | `k8sgerrit/gerrit-init` |
 | `gerrit.images.gerrit` | Image name of the Gerrit container image | `k8sgerrit/gerrit` |
 | `gerrit.tolerations` | Taints and tolerations work together to ensure that pods are not scheduled onto inappropriate nodes. For more information, please refer to the following documents. [Taints and Tolerations](https://kubernetes.io/docs/concepts/scheduling-eviction/taint-and-toleration) | [] |
-
 | `gerrit.topologySpreadConstraints` | Control how Pods are spread across your cluster among failure-domains. For more information, please refer to the following documents. [Pod Topology Spread Constraints](https://kubernetes.io/docs/concepts/workloads/pods/pod-topology-spread-constraints) | {} |
+| `gerrit.nodeSelector` | Assigns a Pod to the specified Nodes. For more information, please refer to the following documents. [Assign Pods to Nodes](https://kubernetes.io/docs/tasks/configure-pod-container/assign-pods-nodes/). [Assigning Pods to Nodes](https://kubernetes.io/docs/concepts/scheduling-eviction/assign-pod-node/) | {} |
 | `gerrit.affinity` | Assigns a Pod to the specified Nodes. For more information, please refer to the following documents. [Assign Pods to Nodes using Node Affinity](https://kubernetes.io/docs/tasks/configure-pod-container/assign-pods-nodes-using-node-affinity/). [Assigning Pods to Nodes](https://kubernetes.io/docs/concepts/scheduling-eviction/assign-pod-node/) | {} |
 | `gerrit.additionalAnnotations` | Additional annotations for the Pods | {} |
+| `gerrit.additionalPodLabels` | Additional labels for Pods | `{}` |
 | `gerrit.replicas` | Number of replica pods to deploy | `1` |
 | `gerrit.updatePartition` | Ordinal at which to start updating pods. Pods with a lower ordinal will not be updated. | `0` |
 | `gerrit.resources` | Configure the amount of resources the pod requests/is allowed | `requests.cpu: 1` |
@@ -309,7 +319,7 @@ future.
 | `gerrit.service.http.port` | Port over which to expose HTTP | `80` |
 | `gerrit.service.ssh.enabled` | Whether to enable SSH | `false` |
 | `gerrit.service.ssh.port` | Port over which to expose SSH | `29418` |
-| `gerrit.keystore` | base64-encoded Java keystore (`cat keystore.jks | base64`) to be used by Gerrit, when using SSL | `nil` |
+| `gerrit.keystore` | base64-encoded Java keystore (`cat keystore.jks \| base64`) to be used by Gerrit, when using SSL | `nil` |
 | `gerrit.index.type` | Index type used by Gerrit (either `lucene` or `elasticsearch`) | `lucene` |
 | `gerrit.plugins.packaged` | List of Gerrit plugins that are packaged into the Gerrit-war-file to install | `["commit-message-length-validator", "download-commands", "replication", "reviewnotes"]` |
 | `gerrit.plugins.downloaded` | List of Gerrit plugins that will be downloaded | `nil` |
@@ -325,7 +335,7 @@ future.
 | `gerrit.additionalConfigMaps` | Allows to mount additional ConfigMaps into a subdirectory of `$SITE/data` | `[]` |
 | `gerrit.additionalConfigMaps[*].name` | Name of the ConfigMap | `nil` |
 | `gerrit.additionalConfigMaps[*].subDir` | Subdirectory under `$SITE/data` into which the files should be symlinked | `nil` |
-| `gerrit.additionalConfigMaps[*].data` | Data of the ConfigMap. If not set, secret has to be created manually | `nil` |
+| `gerrit.additionalConfigMaps[*].data` | Data of the ConfigMap. If not set, ConfigMap has to be created manually | `nil` |
 
 ### Gerrit config files
 
@@ -358,13 +368,6 @@ intended with the chart:
 - `gerrit.canonicalWebUrl`
 
     The canonical web URL has to be set to the Ingress host.
-
-- `index.onlineUpgrade`
-
-    Online reindexing is currently **NOT** supported. An offline reindexing will
-    be enforced upon Gerrit updates. Online reindexing might under some circum-
-    stances interfere with the Gerrit pod startup procedure and thus has to be
-    deactivated.
 
 - `httpd.listenURL`
 

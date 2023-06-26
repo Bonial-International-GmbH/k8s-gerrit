@@ -110,6 +110,12 @@ helm install \
 | `images.imagePullPolicy` | Image pull policy | `Always` |
 | `images.additionalImagePullSecrets` | Additional image pull policies that pods should use | `[]` |
 
+### Labels
+
+| Parameter | Description | Default |
+|-----------|-------------|---------|
+| `additionalLabels` | Additional labels for resources managed by this Helm chart | `{}` |
+
 ### Storage classes
 
 For information of how a `StorageClass` is configured in Kubernetes, read the
@@ -231,6 +237,7 @@ volume to be able to be used by multiple pods.
 | `logStorage.cleanup.schedule` | Cron schedule defining when to run the cleanup job | `0 0 * * *` |
 | `logStorage.cleanup.retentionDays` | Number of days to retain the logs | `14` |
 | `logStorage.cleanup.resources` | Resources the container is allowed to use | `requests.cpu: 100m` |
+| `logStorage.cleanup.additionalPodLabels` | Additional labels for pods | `{}` |
 | | | `requests.memory: 256Mi` |
 | | | `limits.cpu: 100m` |
 | | | `limits.memory: 256Mi` |
@@ -309,8 +316,10 @@ project.
 | Parameter | Description | Default |
 |-----------|-------------|---------|
 | `gitBackend.image` | Image name of the Apache-git-http-backend container image | `k8sgerrit/apache-git-http-backend` |
+| `gitBackend.additionalPodLabels` | Additional labels for Pods | `{}` |
 | `gitBackend.tolerations` | Taints and tolerations work together to ensure that pods are not scheduled onto inappropriate nodes. For more information, please refer to the following documents. [Taints and Tolerations](https://kubernetes.io/docs/concepts/scheduling-eviction/taint-and-toleration) | [] |
 | `gitBackend.topologySpreadConstraints` | Control how Pods are spread across your cluster among failure-domains. For more information, please refer to the following documents. [Pod Topology Spread Constraints](https://kubernetes.io/docs/concepts/workloads/pods/pod-topology-spread-constraints) | {} |
+| `gitBackend.nodeSelector` | Assigns a Pod to the specified Nodes. For more information, please refer to the following documents. [Assign Pods to Nodes](https://kubernetes.io/docs/tasks/configure-pod-container/assign-pods-nodes/). [Assigning Pods to Nodes](https://kubernetes.io/docs/concepts/scheduling-eviction/assign-pod-node/) | {} |
 | `gitBackend.affinity` | Assigns a Pod to the specified Nodes | podAntiAffinity.preferredDuringSchedulingIgnoredDuringExecution[0].weight: 100 |
 |                       |                                      | podAntiAffinity.preferredDuringSchedulingIgnoredDuringExecution[0].podAffinityTerm.topologyKey: "topology.kubernetes.io/zone" |
 |                       |                                      | podAntiAffinity.preferredDuringSchedulingIgnoredDuringExecution[0].podAffinityTerm.labelSelector.matchExpressions[0].key: app |
@@ -356,7 +365,9 @@ this feature configure the replication plugin to use an adminUrl using the forma
 |                   |                                                               | `limits.cpu: 100m` |
 |                   |                                                               | `limits.memory: 256Mi` |
 | `gitGC.tolerations` | Taints and tolerations work together to ensure that pods are not scheduled onto inappropriate nodes. For more information, please refer to the following documents. [Taints and Tolerations](https://kubernetes.io/docs/concepts/scheduling-eviction/taint-and-toleration) | [] |
+| `gitGC.nodeSelector` | Assigns a Pod to the specified Nodes. For more information, please refer to the following documents. [Assign Pods to Nodes](https://kubernetes.io/docs/tasks/configure-pod-container/assign-pods-nodes/). [Assigning Pods to Nodes](https://kubernetes.io/docs/concepts/scheduling-eviction/assign-pod-node/) | {} |
 | `gitGC.affinity` | Assigns a Pod to the specified Nodes. For more information, please refer to the following documents. [Assign Pods to Nodes using Node Affinity](https://kubernetes.io/docs/tasks/configure-pod-container/assign-pods-nodes-using-node-affinity/). [Assigning Pods to Nodes](https://kubernetes.io/docs/concepts/scheduling-eviction/assign-pod-node/) | {} |
+| `gitGC.additionalPodLabels` | Additional labels for Pods | `{}` |
 
 ### Gerrit replica
 
@@ -379,6 +390,7 @@ is mandatory, if access to the Gerrit replica is required!
 | `gerritReplica.images.gerritReplica` | Image name of the Gerrit replica container image | `k8sgerrit/gerrit` |
 | `gerritReplica.tolerations` | Taints and tolerations work together to ensure that pods are not scheduled onto inappropriate nodes. For more information, please refer to the following documents. [Taints and Tolerations](https://kubernetes.io/docs/concepts/scheduling-eviction/taint-and-toleration) | [] |
 | `gerritReplica.topologySpreadConstraints` | Control how Pods are spread across your cluster among failure-domains. For more information, please refer to the following documents. [Pod Topology Spread Constraints](https://kubernetes.io/docs/concepts/workloads/pods/pod-topology-spread-constraints) | {} |
+| `gerritReplica.nodeSelector` | Assigns a Pod to the specified Nodes. For more information, please refer to the following documents. [Assign Pods to Nodes](https://kubernetes.io/docs/tasks/configure-pod-container/assign-pods-nodes/). [Assigning Pods to Nodes](https://kubernetes.io/docs/concepts/scheduling-eviction/assign-pod-node/) | {} |
 | `gerritReplica.affinity` | Assigns a Pod to the specified Nodes. By default, gerrit-replica is evenly distributed on `topology.kubernetes.io/zone`. For more information, please refer to the following documents. [Assign Pods to Nodes using Node Affinity](https://kubernetes.io/docs/tasks/configure-pod-container/assign-pods-nodes-using-node-affinity/). [Assigning Pods to Nodes](https://kubernetes.io/docs/concepts/scheduling-eviction/assign-pod-node/) | podAntiAffinity.preferredDuringSchedulingIgnoredDuringExecution[0].weight: 100 |
 | | | podAntiAffinity.preferredDuringSchedulingIgnoredDuringExecution[0].podAffinityTerm.topologyKey: "topology.kubernetes.io/zone" |
 | | | podAntiAffinity.preferredDuringSchedulingIgnoredDuringExecution[0].podAffinityTerm.labelSelector.matchExpressions[0].key: app |
@@ -386,6 +398,7 @@ is mandatory, if access to the Gerrit replica is required!
 | | | podAntiAffinity.preferredDuringSchedulingIgnoredDuringExecution[0].podAffinityTerm.labelSelector.matchExpressions[0].values[0]: gerrit-replica |
 | `gerritReplica.replicas` | Number of pod replicas to deploy | `1` |
 | `gerritReplica.additionalAnnotations` | Additional annotations for the Pods | {} |
+| `gerritReplica.additionalPodLabels` | Additional labels for the Pods | `{}` |
 | `gerritReplica.maxSurge` | Max. percentage or number of pods allowed to be scheduled above the desired number | `25%` |
 | `gerritReplica.maxUnavailable` | Max. percentage or number of pods allowed to be unavailable at a time | `100%` |
 | `gerritReplica.livenessProbe` | Configuration of the liveness probe timings | `{initialDelaySeconds: 60, periodSeconds: 5}` |
@@ -405,7 +418,7 @@ is mandatory, if access to the Gerrit replica is required!
 | `gerritReplica.service.http.port` | Port over which to expose HTTP | `80` |
 | `gerritReplica.service.ssh.enabled` | Whether to enable SSH for the Gerrit replica | `false` |
 | `gerritReplica.service.ssh.port` | Port for SSH | `29418` |
-| `gerritReplica.keystore` | base64-encoded Java keystore (`cat keystore.jks | base64`) to be used by Gerrit, when using SSL | `nil` |
+| `gerritReplica.keystore` | base64-encoded Java keystore (`cat keystore.jks \| base64`) to be used by Gerrit, when using SSL | `nil` |
 | `gerritReplica.plugins.packaged` | List of Gerrit plugins that are packaged into the Gerrit-war-file to install | `["commit-message-length-validator", "download-commands", "replication", "reviewnotes"]` |
 | `gerritReplica.plugins.downloaded` | List of Gerrit plugins that will be downloaded | `nil` |
 | `gerritReplica.plugins.downloaded[0].name` | Name of plugin | `nil` |
@@ -420,7 +433,7 @@ is mandatory, if access to the Gerrit replica is required!
 | `gerritReplica.additionalConfigMaps` | Allows to mount additional ConfigMaps into a subdirectory of `$SITE/data` | `[]` |
 | `gerritReplica.additionalConfigMaps[*].name` | Name of the ConfigMap | `nil` |
 | `gerritReplica.additionalConfigMaps[*].subDir` | Subdirectory under `$SITE/data` into which the files should be symlinked | `nil` |
-| `gerritReplica.additionalConfigMaps[*].data` | Data of the ConfigMap. If not set, secret has to be created manually | `nil` |
+| `gerritReplica.additionalConfigMaps[*].data` | Data of the ConfigMap. If not set, ConfigMap has to be created manually | `nil` |
 
 ### Gerrit config files
 

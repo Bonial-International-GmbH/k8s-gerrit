@@ -14,40 +14,98 @@
 
 package com.google.gerrit.k8s.operator;
 
-import com.google.common.flogger.FluentLogger;
-import com.google.gerrit.k8s.operator.cluster.GerritClusterReconciler;
-import com.google.gerrit.k8s.operator.gerrit.GerritReconciler;
-import com.google.gerrit.k8s.operator.gitgc.GitGarbageCollectionReconciler;
-import com.google.gerrit.k8s.operator.receiver.ReceiverReconciler;
-import io.fabric8.kubernetes.client.Config;
-import io.fabric8.kubernetes.client.ConfigBuilder;
-import io.fabric8.kubernetes.client.KubernetesClient;
-import io.fabric8.kubernetes.client.KubernetesClientBuilder;
-import io.javaoperatorsdk.operator.Operator;
-import java.io.IOException;
-import org.takes.facets.fork.FkRegex;
-import org.takes.facets.fork.TkFork;
-import org.takes.http.Exit;
-import org.takes.http.FtBasic;
+import static com.google.gerrit.k8s.operator.server.HttpServer.PORT;
 
+import com.google.common.flogger.FluentLogger;
+import com.google.inject.Inject;
+import com.google.inject.Singleton;
+import com.google.inject.name.Named;
+import io.fabric8.kubernetes.api.model.Service;
+import io.fabric8.kubernetes.api.model.ServiceBuilder;
+import io.fabric8.kubernetes.api.model.ServicePort;
+import io.fabric8.kubernetes.api.model.ServicePortBuilder;
+import io.fabric8.kubernetes.client.KubernetesClient;
+import io.javaoperatorsdk.operator.Operator;
+import io.javaoperatorsdk.operator.api.reconciler.Reconciler;
+import java.util.Map;
+import java.util.Set;
+
+@Singleton
 public class GerritOperator {
   private static final FluentLogger logger = FluentLogger.forEnclosingClass();
+  public static final String SERVICE_NAME = "gerrit-operator";
+  public static final int SERVICE_PORT = 8080;
 
-  public static void main(String[] args) throws IOException {
-    Config config = new ConfigBuilder().withNamespace(null).build();
-    KubernetesClient client = new KubernetesClientBuilder().withConfig(config).build();
-    Operator operator = new Operator(client);
-    logger.atFine().log("Registering GerritCluster Reconciler");
-    operator.register(new GerritClusterReconciler(client));
-    logger.atFine().log("Registering GitGc Reconciler");
-    operator.register(new GitGarbageCollectionReconciler(client));
-    logger.atFine().log("Registering Gerrit Reconciler");
-    operator.register(new GerritReconciler(client));
-    logger.atFine().log("Registering Receiver Reconciler");
-    operator.register(new ReceiverReconciler(client));
-    operator.installShutdownHook();
+  private final KubernetesClient client;
+  private final LifecycleManager lifecycleManager;
+
+  @SuppressWarnings("rawtypes")
+  private final Set<Reconciler> reconcilers;
+
+  private final String namespace;
+
+  private Operator operator;
+  private Service svc;
+
+  @Inject
+  @SuppressWarnings("rawtypes")
+  public GerritOperator(
+      LifecycleManager lifecycleManager,
+      KubernetesClient client,
+      Set<Reconciler> reconcilers,
+      @Named("Namespace") String namespace) {
+    this.lifecycleManager = lifecycleManager;
+    this.client = client;
+    this.reconcilers = reconcilers;
+    this.namespace = namespace;
+  }
+
+  public void start() throws Exception {
+    operator = new Operator(client);
+    for (Reconciler<?> reconciler : reconcilers) {
+      logger.atInfo().log(
+          String.format("Registering reconciler: %s", reconciler.getClass().getSimpleName()));
+      operator.register(reconciler);
+    }
     operator.start();
+    lifecycleManager.addShutdownHook(
+        new Runnable() {
+          @Override
+          public void run() {
+            shutdown();
+          }
+        });
+    applyService();
+  }
 
-    new FtBasic(new TkFork(new FkRegex("/health", "ALL GOOD.")), 8080).start(Exit.NEVER);
+  public void shutdown() {
+    client.resource(svc).delete();
+    operator.stop();
+  }
+
+  private void applyService() {
+    ServicePort port =
+        new ServicePortBuilder()
+            .withName("http")
+            .withPort(SERVICE_PORT)
+            .withNewTargetPort(PORT)
+            .withProtocol("TCP")
+            .build();
+    svc =
+        new ServiceBuilder()
+            .withApiVersion("v1")
+            .withNewMetadata()
+            .withName(SERVICE_NAME)
+            .withNamespace(namespace)
+            .endMetadata()
+            .withNewSpec()
+            .withType("ClusterIP")
+            .withPorts(port)
+            .withSelector(Map.of("app", "gerrit-operator"))
+            .endSpec()
+            .build();
+
+    logger.atInfo().log(String.format("Applying Service for Gerrit Operator: %s", svc.toString()));
+    client.resource(svc).createOrReplace();
   }
 }
