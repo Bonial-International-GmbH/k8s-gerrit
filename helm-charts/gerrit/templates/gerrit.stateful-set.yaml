@@ -103,6 +103,14 @@ spec:
       - name: gerrit-init
         image: {{ template "registry" . }}{{ .Values.gerrit.images.gerritInit }}:{{ .Values.images.version }}
         imagePullPolicy: {{ .Values.images.imagePullPolicy }}
+        command:
+          - python3
+          - /var/tools/gerrit-initializer
+          - -s
+          - /var/gerrit
+          - -c
+          - /var/config/gerrit-init.yaml
+          - init
         env:
         - name: POD_NAME
           valueFrom:
