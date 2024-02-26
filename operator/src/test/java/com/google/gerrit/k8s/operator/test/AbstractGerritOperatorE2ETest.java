@@ -15,19 +15,23 @@
 package com.google.gerrit.k8s.operator.test;
 
 import com.google.common.flogger.FluentLogger;
-import com.google.gerrit.k8s.operator.cluster.GerritCluster;
+import com.google.gerrit.k8s.operator.api.model.cluster.GerritCluster;
+import com.google.gerrit.k8s.operator.api.model.gerrit.Gerrit;
+import com.google.gerrit.k8s.operator.api.model.gitgc.GitGarbageCollection;
+import com.google.gerrit.k8s.operator.api.model.network.GerritNetwork;
+import com.google.gerrit.k8s.operator.api.model.receiver.Receiver;
 import com.google.gerrit.k8s.operator.cluster.GerritClusterReconciler;
-import com.google.gerrit.k8s.operator.gerrit.Gerrit;
 import com.google.gerrit.k8s.operator.gerrit.GerritReconciler;
-import com.google.gerrit.k8s.operator.gitgc.GitGarbageCollection;
 import com.google.gerrit.k8s.operator.gitgc.GitGarbageCollectionReconciler;
-import com.google.gerrit.k8s.operator.receiver.Receiver;
+import com.google.gerrit.k8s.operator.network.GerritNetworkReconcilerProvider;
+import com.google.gerrit.k8s.operator.network.IngressType;
 import com.google.gerrit.k8s.operator.receiver.ReceiverReconciler;
 import io.fabric8.kubernetes.api.model.Secret;
 import io.fabric8.kubernetes.api.model.SecretBuilder;
 import io.fabric8.kubernetes.client.Config;
 import io.fabric8.kubernetes.client.KubernetesClient;
 import io.fabric8.kubernetes.client.KubernetesClientBuilder;
+import io.javaoperatorsdk.operator.api.reconciler.Reconciler;
 import io.javaoperatorsdk.operator.junit.LocallyRunOperatorExtension;
 import java.io.IOException;
 import java.nio.file.Files;
@@ -39,7 +43,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.extension.RegisterExtension;
 import org.mockito.Mockito;
 
-public class AbstractGerritOperatorE2ETest {
+public abstract class AbstractGerritOperatorE2ETest {
   private static final FluentLogger logger = FluentLogger.forEnclosingClass();
   protected static final KubernetesClient client = getKubernetesClient();
   public static final String IMAGE_PULL_SECRET_NAME = "image-pull-secret";
@@ -47,22 +51,35 @@ public class AbstractGerritOperatorE2ETest {
 
   protected GerritReconciler gerritReconciler = Mockito.spy(new GerritReconciler(client));
   protected TestGerritCluster gerritCluster;
+  protected TestSecureConfig secureConfig;
+  protected Secret receiverCredentials;
 
   @RegisterExtension
   protected LocallyRunOperatorExtension operator =
       LocallyRunOperatorExtension.builder()
+          .withNamespaceDeleteTimeout(120)
           .waitForNamespaceDeletion(true)
-          .withReconciler(new GerritClusterReconciler(client))
+          .withReconciler(new GerritClusterReconciler())
           .withReconciler(gerritReconciler)
           .withReconciler(new GitGarbageCollectionReconciler(client))
           .withReconciler(new ReceiverReconciler(client))
+          .withReconciler(getGerritNetworkReconciler())
           .build();
 
   @BeforeEach
   void setup() {
     Mockito.reset(gerritReconciler);
     createImagePullSecret(client, operator.getNamespace());
-    this.gerritCluster = new TestGerritCluster(client, operator.getNamespace());
+
+    secureConfig = new TestSecureConfig(client, testProps, operator.getNamespace());
+    secureConfig.createOrReplace();
+
+    receiverCredentials = ReceiverUtil.createCredentialsSecret(operator.getNamespace());
+
+    client.resource(receiverCredentials).inNamespace(operator.getNamespace()).createOrReplace();
+
+    gerritCluster = new TestGerritCluster(client, operator.getNamespace());
+    gerritCluster.setIngressType(getIngressType());
     gerritCluster.deploy();
   }
 
@@ -72,6 +89,7 @@ public class AbstractGerritOperatorE2ETest {
     client.resources(Receiver.class).inNamespace(operator.getNamespace()).delete();
     client.resources(GitGarbageCollection.class).inNamespace(operator.getNamespace()).delete();
     client.resources(GerritCluster.class).inNamespace(operator.getNamespace()).delete();
+    client.resource(receiverCredentials).inNamespace(operator.getNamespace()).delete();
   }
 
   private static KubernetesClient getKubernetesClient() {
@@ -113,4 +131,10 @@ public class AbstractGerritOperatorE2ETest {
             .build();
     client.resource(imagePullSecret).createOrReplace();
   }
+
+  public Reconciler<GerritNetwork> getGerritNetworkReconciler() {
+    return new GerritNetworkReconcilerProvider(getIngressType()).get();
+  }
+
+  protected abstract IngressType getIngressType();
 }

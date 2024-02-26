@@ -17,8 +17,13 @@ package com.google.gerrit.k8s.operator.gerrit;
 import static com.google.gerrit.k8s.operator.gerrit.GerritReconciler.CONFIG_MAP_EVENT_SOURCE;
 
 import com.google.common.flogger.FluentLogger;
-import com.google.gerrit.k8s.operator.cluster.GerritCluster;
-import com.google.gerrit.k8s.operator.cluster.GerritIngressConfig.IngressType;
+import com.google.gerrit.k8s.operator.api.model.gerrit.Gerrit;
+import com.google.gerrit.k8s.operator.api.model.gerrit.GerritStatus;
+import com.google.gerrit.k8s.operator.cluster.dependent.FluentBitConfigMap;
+import com.google.gerrit.k8s.operator.gerrit.dependent.GerritConfigMap;
+import com.google.gerrit.k8s.operator.gerrit.dependent.GerritInitConfigMap;
+import com.google.gerrit.k8s.operator.gerrit.dependent.GerritService;
+import com.google.gerrit.k8s.operator.gerrit.dependent.GerritStatefulSet;
 import com.google.inject.Inject;
 import com.google.inject.Singleton;
 import io.fabric8.kubernetes.api.model.ConfigMap;
@@ -32,146 +37,78 @@ import io.javaoperatorsdk.operator.api.reconciler.EventSourceInitializer;
 import io.javaoperatorsdk.operator.api.reconciler.Reconciler;
 import io.javaoperatorsdk.operator.api.reconciler.UpdateControl;
 import io.javaoperatorsdk.operator.api.reconciler.dependent.Dependent;
-import io.javaoperatorsdk.operator.api.reconciler.dependent.ReconcileResult;
-import io.javaoperatorsdk.operator.api.reconciler.dependent.ReconcileResult.Operation;
-import io.javaoperatorsdk.operator.api.reconciler.dependent.managed.ManagedDependentResourceContext;
 import io.javaoperatorsdk.operator.processing.dependent.workflow.WorkflowReconcileResult;
 import io.javaoperatorsdk.operator.processing.event.ResourceID;
 import io.javaoperatorsdk.operator.processing.event.source.EventSource;
 import io.javaoperatorsdk.operator.processing.event.source.SecondaryToPrimaryMapper;
 import io.javaoperatorsdk.operator.processing.event.source.informer.InformerEventSource;
-import java.util.Collection;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 @Singleton
 @ControllerConfiguration(
     dependents = {
       @Dependent(
+          name = "fluentbit-configmap",
+          type = FluentBitConfigMap.class,
+          useEventSourceWithName = CONFIG_MAP_EVENT_SOURCE),
+      @Dependent(
           name = "gerrit-configmap",
-          type = GerritConfigMapDependentResource.class,
+          type = GerritConfigMap.class,
           useEventSourceWithName = CONFIG_MAP_EVENT_SOURCE),
       @Dependent(
           name = "gerrit-init-configmap",
-          type = GerritInitConfigMapDependentResource.class,
+          type = GerritInitConfigMap.class,
           useEventSourceWithName = CONFIG_MAP_EVENT_SOURCE),
       @Dependent(
           name = "gerrit-statefulset",
-          type = StatefulSetDependentResource.class,
+          type = GerritStatefulSet.class,
           dependsOn = {"gerrit-configmap", "gerrit-init-configmap"}),
       @Dependent(
           name = "gerrit-service",
-          type = ServiceDependentResource.class,
+          type = GerritService.class,
           dependsOn = {"gerrit-statefulset"})
     })
 public class GerritReconciler implements Reconciler<Gerrit>, EventSourceInitializer<Gerrit> {
+  public static final String GERRIT_SECRET_EVENT_SOURCE = "gerrit-secret-event-source";
   public static final String CONFIG_MAP_EVENT_SOURCE = "configmap-event-source";
 
   private static final FluentLogger logger = FluentLogger.forEnclosingClass();
-  private static final String SECRET_EVENT_SOURCE_NAME = "secret-event-source";
-  private final KubernetesClient client;
 
-  private final GerritIstioVirtualService virtualService;
-  private final GerritIstioDestinationRule destinationRule;
+  private final KubernetesClient client;
 
   @Inject
   public GerritReconciler(KubernetesClient client) {
     this.client = client;
-
-    this.virtualService = new GerritIstioVirtualService();
-    this.virtualService.setKubernetesClient(client);
-
-    this.destinationRule = new GerritIstioDestinationRule();
-    this.destinationRule.setKubernetesClient(client);
   }
 
   @Override
   public Map<String, EventSource> prepareEventSources(EventSourceContext<Gerrit> context) {
-    final SecondaryToPrimaryMapper<GerritCluster> gerritClusterMapper =
-        (GerritCluster cluster) ->
-            context
-                .getPrimaryCache()
-                .list(
-                    gerrit -> gerrit.getSpec().getCluster().equals(cluster.getMetadata().getName()))
-                .map(ResourceID::fromResource)
-                .collect(Collectors.toSet());
+    Map<String, EventSource> eventSources = new HashMap<>();
 
-    InformerEventSource<GerritCluster, Gerrit> gerritClusterEventSource =
+    InformerEventSource<ConfigMap, Gerrit> configmapEventSource =
         new InformerEventSource<>(
-            InformerConfiguration.from(GerritCluster.class, context)
-                .withSecondaryToPrimaryMapper(gerritClusterMapper)
-                .build(),
-            context);
+            InformerConfiguration.from(ConfigMap.class, context).build(), context);
+    eventSources.put(CONFIG_MAP_EVENT_SOURCE, configmapEventSource);
 
-    final SecondaryToPrimaryMapper<Secret> secretMapper =
-        (Secret secret) ->
-            context
-                .getPrimaryCache()
-                .list(
-                    gerrit ->
-                        gerrit.getSpec().getSecrets().contains(secret.getMetadata().getName()))
-                .map(ResourceID::fromResource)
-                .collect(Collectors.toSet());
-
-    InformerEventSource<Secret, Gerrit> secretEventSource =
+    SecondaryToPrimaryMapper<Secret> secretMapper = new SecretToGerritMapper(context);
+    InformerEventSource<Secret, Gerrit> moduleMetaDataEventSource =
         new InformerEventSource<>(
             InformerConfiguration.from(Secret.class, context)
                 .withSecondaryToPrimaryMapper(secretMapper)
                 .build(),
             context);
-
-    InformerEventSource<ConfigMap, Gerrit> configmapEventSource =
-        new InformerEventSource<>(
-            InformerConfiguration.from(ConfigMap.class, context).build(), context);
-
-    Map<String, EventSource> eventSources =
-        EventSourceInitializer.nameEventSources(
-            gerritClusterEventSource,
-            virtualService.initEventSource(context),
-            destinationRule.initEventSource(context));
-    eventSources.put(CONFIG_MAP_EVENT_SOURCE, configmapEventSource);
-    eventSources.put(SECRET_EVENT_SOURCE_NAME, secretEventSource);
+    eventSources.put(GERRIT_SECRET_EVENT_SOURCE, moduleMetaDataEventSource);
     return eventSources;
   }
 
   @Override
   public UpdateControl<Gerrit> reconcile(Gerrit gerrit, Context<Gerrit> context) throws Exception {
-    if (gerrit.getStatus() != null && isGerritRestartRequired(gerrit, context)) {
-      restartGerritStatefulSet(gerrit);
-    }
-
-    GerritCluster gerritCluster =
-        client
-            .resources(GerritCluster.class)
-            .inNamespace(gerrit.getMetadata().getNamespace())
-            .withName(gerrit.getSpec().getCluster())
-            .get();
-
-    if (gerritCluster == null) {
-      throw new IllegalStateException("The Gerrit cluster could not be found.");
-    }
-
-    if (gerritCluster.getSpec().getIngress().isEnabled()
-        && gerritCluster.getSpec().getIngress().getType() == IngressType.ISTIO) {
-      this.virtualService.reconcile(gerrit, context);
-      this.destinationRule.reconcile(gerrit, context);
-    }
-
     return UpdateControl.patchStatus(updateStatus(gerrit, context));
-  }
-
-  void restartGerritStatefulSet(Gerrit gerrit) {
-    logger.atInfo().log(
-        "Restarting Gerrit %s due to configuration change.", gerrit.getMetadata().getName());
-    client
-        .apps()
-        .statefulSets()
-        .inNamespace(gerrit.getMetadata().getNamespace())
-        .withName(gerrit.getMetadata().getName())
-        .rolling()
-        .restart();
   }
 
   private Gerrit updateStatus(Gerrit gerrit, Context<Gerrit> context) {
@@ -187,57 +124,105 @@ public class GerritReconciler implements Reconciler<Gerrit>, EventSourceInitiali
       status.setReady(false);
     }
 
-    Map<String, String> secretVersions = new HashMap<>();
-    for (String sec : gerrit.getSpec().getSecrets()) {
-      secretVersions.put(
-          sec,
-          client
-              .secrets()
-              .inNamespace(gerrit.getMetadata().getNamespace())
-              .withName(sec)
-              .get()
-              .getMetadata()
-              .getResourceVersion());
-    }
-    status.setAppliedSecretVersions(secretVersions);
+    addConfigMapsStatus(gerrit, status);
+    addSecretsStatus(gerrit, context, status);
 
     gerrit.setStatus(status);
     return gerrit;
   }
 
-  @SuppressWarnings("rawtypes")
-  private boolean isGerritRestartRequired(Gerrit gerrit, Context<Gerrit> context) {
-    ManagedDependentResourceContext managedResources = context.managedDependentResourceContext();
-    Optional<WorkflowReconcileResult> reconcileResults =
-        managedResources.getWorkflowReconcileResult();
-    if (reconcileResults.isPresent()) {
-      Collection<ReconcileResult> results = reconcileResults.get().getReconcileResults().values();
-      for (ReconcileResult r : results) {
-        if (r.getSingleResource().isPresent()
-            && r.getSingleResource().get() instanceof ConfigMap
-            && (r.getSingleOperation().equals(Operation.UPDATED)
-                || r.getSingleOperation().equals(Operation.CREATED))) {
-          return true;
-        }
+  public void addConfigMapsStatus(Gerrit gerrit, GerritStatus status) {
+    Map<String, String> cmVersions = new HashMap<>();
+    cmVersions.put(
+        GerritConfigMap.getName(gerrit),
+        client
+            .configMaps()
+            .inNamespace(gerrit.getMetadata().getNamespace())
+            .withName(GerritConfigMap.getName(gerrit))
+            .get()
+            .getMetadata()
+            .getResourceVersion());
+
+    cmVersions.put(
+        GerritInitConfigMap.getName(gerrit),
+        client
+            .configMaps()
+            .inNamespace(gerrit.getMetadata().getNamespace())
+            .withName(GerritInitConfigMap.getName(gerrit))
+            .get()
+            .getMetadata()
+            .getResourceVersion());
+
+    logger.atFine().log("Adding ConfigMap versions: %s", cmVersions);
+    status.setAppliedConfigMapVersions(cmVersions);
+  }
+
+  public void addSecretsStatus(Gerrit gerrit, Context<Gerrit> context, GerritStatus status) {
+    // GerritSecret
+    Map<String, String> secretVersions = new HashMap<>();
+    String gerritSecretName = gerrit.getSpec().getSecretRef();
+    if (gerritSecretName != null && !gerritSecretName.isBlank()) {
+      Optional<Secret> gerritSecret =
+          Optional.ofNullable(
+              client
+                  .secrets()
+                  .inNamespace(gerrit.getMetadata().getNamespace())
+                  .withName(gerritSecretName)
+                  .get());
+      if (gerritSecret.isPresent()) {
+        secretVersions.put(gerritSecretName, gerritSecret.get().getMetadata().getResourceVersion());
       }
     }
 
-    for (String sec : gerrit.getSpec().getSecrets()) {
-      String secVersion =
+    // GerritModuleData secrets
+    for (String secretName : gerrit.getModuleDataSecretNames()) {
+      secretVersions.put(
+          secretName,
           client
               .secrets()
               .inNamespace(gerrit.getMetadata().getNamespace())
-              .withName(sec)
+              .withName(secretName)
               .get()
               .getMetadata()
-              .getResourceVersion();
-      if (!secVersion.equals(gerrit.getStatus().getAppliedSecretVersions().get(sec))) {
-        logger.atFine().log(
-            "Looking up Secret: %s; Installed secret resource version: %s; Resource version known to Gerrit: %s",
-            sec, secVersion, gerrit.getStatus().getAppliedSecretVersions().get(sec));
-        return true;
-      }
+              .getResourceVersion());
     }
-    return false;
+
+    logger.atFine().log("Adding Secret versions: %s", secretVersions);
+    status.setAppliedSecretVersions(secretVersions);
+  }
+
+  private static class SecretToGerritMapper implements SecondaryToPrimaryMapper<Secret> {
+    private final EventSourceContext<Gerrit> context;
+
+    public SecretToGerritMapper(EventSourceContext<Gerrit> context) {
+      this.context = context;
+    }
+
+    @Override
+    public Set<ResourceID> toPrimaryResourceIDs(Secret secret) {
+      return context
+          .getPrimaryCache()
+          .list(
+              gerrit ->
+                  isGerritSecretConfig(gerrit, secret) || isGerritModuleDataSecret(gerrit, secret))
+          .map(ResourceID::fromResource)
+          .collect(Collectors.toSet());
+    }
+
+    private boolean isGerritSecretConfig(Gerrit gerrit, Secret secret) {
+      return gerrit.getSpec().getSecretRef().equals(secret.getMetadata().getName());
+    }
+
+    private boolean isGerritModuleDataSecret(Gerrit gerrit, Secret secret) {
+      return gerrit.getSpec().getAllGerritModules().stream()
+          .anyMatch(
+              gerritModule ->
+                  Objects.nonNull(gerritModule.getModuleData())
+                      && Objects.nonNull(gerritModule.getModuleData().getSecretRef())
+                      && gerritModule
+                          .getModuleData()
+                          .getSecretRef()
+                          .equals(secret.getMetadata().getName()));
+    }
   }
 }

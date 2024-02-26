@@ -38,6 +38,8 @@ storageClasses:
     parameters:
       type: gp2
       fsType: ext4
+    mountOptions: []
+    allowVolumeExpansion: false
   # Storage class used for storing git repositories. Has to provide RWM access.
   shared:
     # If create is set to false, an existing StorageClass with RWM access
@@ -49,6 +51,8 @@ storageClasses:
     # Use the parameters key to set all parameters needed for the provisioner
     parameters:
       mountOptions: vers=4.1
+    mountOptions: []
+    allowVolumeExpansion: false
 
 nfsWorkaround:
   enabled: false
@@ -282,6 +286,9 @@ gerritReplica:
   additionalAnnotations: {}
   additionalPodLabels: {}
 
+  # If no value for probeScheme, the probe will use the default HTTP
+  probeScheme: HTTP
+
   livenessProbe:
     initialDelaySeconds: 60
     periodSeconds: 5
@@ -332,16 +339,25 @@ gerritReplica:
   # automatic encoding using helm does not work here.
   keystore:
 
-  plugins:
-    packaged:
-    - singleusergroup
-    downloaded:
+  pluginManagement:
+    plugins: []
+    # A plugin packaged in the gerrit.war-file
+    # - name: download-commands
+
+    # A plugin packaged in the gerrit.war-file that will also be installed as a
+    # lib
+    # - name: replication
+    #   installAsLibrary: true
+
+    # A plugin that will be downloaded on startup
     # - name: delete-project
     #   url: https://example.com/gerrit-plugins/delete-project.jar
     #   sha1:
-    installAsLibrary: []
+    #   installAsLibrary: false
+
     # Only downloaded plugins will be cached. This will be ignored, if no plugins
     # are downloaded.
+    libs: []
     cache:
       enabled: false
       size: 1Gi
@@ -389,7 +405,7 @@ gerritReplica:
         [container]
           user = gerrit # FIXED
           replica = true # FIXED
-          javaHome = /usr/lib/jvm/java-11-openjdk # FIXED
+          javaHome = /usr/lib/jvm/java-17-openjdk # FIXED
           javaOptions = -Djavax.net.ssl.trustStore=/var/gerrit/etc/keystore # FIXED
           javaOptions = -Xms200m
           # Has to be lower than 'gerritReplica.resources.limits.memory'. Also

@@ -46,19 +46,15 @@ data:
     {{ if .Values.caCert -}}
     caCertPath: /var/config/ca.crt
     {{- end }}
-    pluginCache: {{ .Values.gerritReplica.plugins.cache.enabled }}
+    pluginCacheEnabled: {{ .Values.gerritReplica.pluginManagement.cache.enabled }}
     pluginCacheDir: /var/mnt/plugins
-    {{- if .Values.gerritReplica.plugins.packaged }}
-    packagedPlugins:
-{{ toYaml .Values.gerritReplica.plugins.packaged | indent 6}}
+    {{- if .Values.gerritReplica.pluginManagement.plugins }}
+    plugins:
+{{ toYaml .Values.gerritReplica.pluginManagement.plugins | indent 6}}
     {{- end }}
-    {{- if .Values.gerritReplica.plugins.downloaded }}
-    downloadedPlugins:
-{{ toYaml .Values.gerritReplica.plugins.downloaded | indent 6 }}
-    {{- end }}
-    {{- if .Values.gerritReplica.plugins.installAsLibrary }}
-    installAsLibrary:
-{{ toYaml .Values.gerritReplica.plugins.installAsLibrary | indent 6 }}
+    {{- if .Values.gerritReplica.pluginManagement.libs }}
+    libs:
+{{ toYaml .Values.gerritReplica.pluginManagement.libs | indent 6}}
     {{- end }}
 {{- range .Values.gerritReplica.additionalConfigMaps -}}
 {{- if .data }}
@@ -73,8 +69,8 @@ metadata:
     chart: {{ template "gerrit-replica.chart" $root }}
     heritage: {{ $root.Release.Service }}
     release: {{ $root.Release.Name }}
-    {{- if .Values.additionalLabels }}
-{{ toYaml .Values.additionalLabels  | indent 4 }}
+    {{- if $root.Values.additionalLabels }}
+{{ toYaml $root.Values.additionalLabels  | indent 4 }}
     {{- end }}
 data:
 {{ toYaml .data | indent 2 }}

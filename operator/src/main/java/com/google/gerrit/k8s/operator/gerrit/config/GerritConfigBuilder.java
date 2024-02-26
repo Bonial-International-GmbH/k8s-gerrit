@@ -14,58 +14,126 @@
 
 package com.google.gerrit.k8s.operator.gerrit.config;
 
-import static com.google.gerrit.k8s.operator.gerrit.StatefulSetDependentResource.HTTP_PORT;
-import static com.google.gerrit.k8s.operator.gerrit.StatefulSetDependentResource.SSH_PORT;
+import static com.google.gerrit.k8s.operator.gerrit.dependent.GerritStatefulSet.HTTP_PORT;
+import static com.google.gerrit.k8s.operator.gerrit.dependent.GerritStatefulSet.SSH_PORT;
 
+import com.google.common.collect.ImmutableList;
+import com.google.gerrit.k8s.operator.api.model.gerrit.Gerrit;
+import com.google.gerrit.k8s.operator.api.model.gerrit.GerritTemplateSpec.GerritMode;
+import com.google.gerrit.k8s.operator.api.model.shared.IngressConfig;
 import java.util.ArrayList;
-import java.util.Arrays;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
-import org.eclipse.jgit.errors.ConfigInvalidException;
-import org.eclipse.jgit.lib.Config;
 
-@SuppressWarnings("rawtypes")
-public class GerritConfigBuilder {
+public class GerritConfigBuilder extends ConfigBuilder {
   private static final Pattern PROTOCOL_PATTERN = Pattern.compile("^(https?)://.+");
-  private List<RequiredOption> requiredOptions = new ArrayList<>(setupStaticRequiredOptions());
-  private Config cfg;
 
-  private static List<RequiredOption> setupStaticRequiredOptions() {
-    List<RequiredOption> requiredOptions = new ArrayList<>();
-    requiredOptions.add(
-        new RequiredOption<String>("container", "javaHome", "/usr/lib/jvm/java-11-openjdk"));
-    requiredOptions.add(
-        new RequiredOption<Set<String>>(
-            "container",
-            "javaOptions",
-            Set.of("-Djavax.net.ssl.trustStore=/var/gerrit/etc/keystore")));
-    requiredOptions.add(new RequiredOption<String>("container", "user", "gerrit"));
-    requiredOptions.add(new RequiredOption<String>("gerrit", "basepath", "git"));
+  public GerritConfigBuilder(Gerrit gerrit) {
+    super(
+        gerrit.getSpec().getConfigFiles().getOrDefault("gerrit.config", ""),
+        ImmutableList.copyOf(collectRequiredOptions(gerrit)));
+  }
+
+  private static List<RequiredOption<?>> collectRequiredOptions(Gerrit gerrit) {
+    List<RequiredOption<?>> requiredOptions = new ArrayList<>();
+    requiredOptions.addAll(cacheSection(gerrit));
+    requiredOptions.addAll(containerSection(gerrit));
+    requiredOptions.addAll(gerritSection(gerrit));
+    requiredOptions.addAll(httpdSection(gerrit));
+    requiredOptions.addAll(sshdSection(gerrit));
+    return requiredOptions;
+  }
+
+  private static List<RequiredOption<?>> cacheSection(Gerrit gerrit) {
+    List<RequiredOption<?>> requiredOptions = new ArrayList<>();
     requiredOptions.add(new RequiredOption<String>("cache", "directory", "cache"));
     return requiredOptions;
   }
 
-  public GerritConfigBuilder withConfig(String text) {
-    Config cfg = new Config();
-    try {
-      cfg.fromText(text);
-    } catch (ConfigInvalidException e) {
-      throw new IllegalStateException("The provided gerrit.config is invalid.");
+  private static List<RequiredOption<?>> containerSection(Gerrit gerrit) {
+    List<RequiredOption<?>> requiredOptions = new ArrayList<>();
+    requiredOptions.add(new RequiredOption<String>("container", "user", "gerrit"));
+    requiredOptions.add(
+        new RequiredOption<Boolean>(
+            "container", "replica", gerrit.getSpec().getMode().equals(GerritMode.REPLICA)));
+    requiredOptions.add(
+        new RequiredOption<String>("container", "javaHome", "/usr/lib/jvm/java-11-openjdk"));
+    requiredOptions.add(javaOptions(gerrit));
+    return requiredOptions;
+  }
+
+  private static List<RequiredOption<?>> gerritSection(Gerrit gerrit) {
+    List<RequiredOption<?>> requiredOptions = new ArrayList<>();
+    String serverId = gerrit.getSpec().getServerId();
+    requiredOptions.add(new RequiredOption<String>("gerrit", "basepath", "git"));
+    if (serverId != null && !serverId.isBlank()) {
+      requiredOptions.add(new RequiredOption<String>("gerrit", "serverId", serverId));
     }
 
-    return withConfig(cfg);
+    if (gerrit.getSpec().isHighlyAvailablePrimary()) {
+      requiredOptions.add(
+          new RequiredOption<Set<String>>(
+              "gerrit",
+              "installModule",
+              Set.of("com.gerritforge.gerrit.globalrefdb.validation.LibModule")));
+      requiredOptions.add(
+          new RequiredOption<Set<String>>(
+              "gerrit",
+              "installDbModule",
+              Set.of("com.ericsson.gerrit.plugins.highavailability.ValidationModule")));
+    }
+
+    IngressConfig ingressConfig = gerrit.getSpec().getIngress();
+    if (ingressConfig.isEnabled()) {
+      requiredOptions.add(
+          new RequiredOption<String>("gerrit", "canonicalWebUrl", ingressConfig.getUrl()));
+    }
+
+    return requiredOptions;
   }
 
-  public GerritConfigBuilder withConfig(Config cfg) {
-    this.cfg = cfg;
-    return this;
+  private static List<RequiredOption<?>> httpdSection(Gerrit gerrit) {
+    List<RequiredOption<?>> requiredOptions = new ArrayList<>();
+    IngressConfig ingressConfig = gerrit.getSpec().getIngress();
+    if (ingressConfig.isEnabled()) {
+      requiredOptions.add(listenUrl(ingressConfig.getUrl()));
+    }
+    return requiredOptions;
   }
 
-  public GerritConfigBuilder withUrl(String url) {
-    this.requiredOptions.add(new RequiredOption<String>("gerrit", "canonicalWebUrl", url));
+  private static List<RequiredOption<?>> sshdSection(Gerrit gerrit) {
+    List<RequiredOption<?>> requiredOptions = new ArrayList<>();
+    requiredOptions.add(sshListenAddress(gerrit));
+    IngressConfig ingressConfig = gerrit.getSpec().getIngress();
+    if (ingressConfig.isEnabled() && gerrit.isSshEnabled()) {
+      requiredOptions.add(sshAdvertisedAddress(gerrit));
+    }
+    return requiredOptions;
+  }
 
+  private static RequiredOption<Set<String>> javaOptions(Gerrit gerrit) {
+    Set<String> javaOptions = new HashSet<>();
+    javaOptions.add("-Djavax.net.ssl.trustStore=/var/gerrit/etc/keystore");
+    if (gerrit.getSpec().isHighlyAvailablePrimary()) {
+      javaOptions.add("-Djava.net.preferIPv4Stack=true");
+    }
+    if (gerrit.getSpec().getDebug().isEnabled()) {
+      javaOptions.add("-Xdebug");
+      String debugServerCfg = "-Xrunjdwp:transport=dt_socket,server=y,suspend=y,address=8000";
+      if (gerrit.getSpec().getDebug().isSuspend()) {
+        debugServerCfg = debugServerCfg + ",suspend=y";
+      } else {
+        debugServerCfg = debugServerCfg + ",suspend=n";
+      }
+      javaOptions.add(debugServerCfg);
+    }
+    return new RequiredOption<Set<String>>("container", "javaOptions", javaOptions);
+  }
+
+  private static RequiredOption<String> listenUrl(String url) {
     StringBuilder listenUrlBuilder = new StringBuilder();
     listenUrlBuilder.append("proxy-");
     Matcher protocolMatcher = PROTOCOL_PATTERN.matcher(url);
@@ -78,64 +146,25 @@ public class GerritConfigBuilder {
     listenUrlBuilder.append("://*:");
     listenUrlBuilder.append(HTTP_PORT);
     listenUrlBuilder.append("/");
-    this.requiredOptions.add(
-        new RequiredOption<String>("httpd", "listenUrl", listenUrlBuilder.toString()));
-    return this;
+    return new RequiredOption<String>("httpd", "listenUrl", listenUrlBuilder.toString());
   }
 
-  public GerritConfigBuilder withSsh(boolean enabled) {
+  private static RequiredOption<String> sshListenAddress(Gerrit gerrit) {
     String listenAddress;
-    if (enabled) {
+    if (gerrit.isSshEnabled()) {
       listenAddress = "*:" + SSH_PORT;
     } else {
       listenAddress = "off";
     }
-    this.requiredOptions.add(new RequiredOption<String>("sshd", "listenAddress", listenAddress));
-    return this;
+    return new RequiredOption<String>("sshd", "listenAddress", listenAddress);
   }
 
-  public GerritConfigBuilder withSsh(boolean enabled, String advertisedAddress) {
-    this.requiredOptions.add(
-        new RequiredOption<String>("sshd", "advertisedAddress", advertisedAddress));
-    return withSsh(enabled);
-  }
-
-  public GerritConfigBuilder useReplicaMode(boolean isReplica) {
-    this.requiredOptions.add(new RequiredOption<Boolean>("container", "replica", isReplica));
-    return this;
-  }
-
-  public Config build() {
-    GerritConfigValidator configValidator = new GerritConfigValidator(requiredOptions);
-    configValidator.check(cfg);
-    setRequiredOptions();
-    return cfg;
-  }
-
-  @SuppressWarnings("unchecked")
-  private void setRequiredOptions() {
-    for (RequiredOption<?> opt : requiredOptions) {
-      if (opt.getExpected() instanceof String) {
-        cfg.setString(
-            opt.getSection(), opt.getSubSection(), opt.getKey(), (String) opt.getExpected());
-      } else if (opt.getExpected() instanceof Boolean) {
-        cfg.setBoolean(
-            opt.getSection(), opt.getSubSection(), opt.getKey(), (Boolean) opt.getExpected());
-      } else if (opt.getExpected() instanceof Set) {
-        List<String> values =
-            new ArrayList<String>(
-                Arrays.asList(
-                    cfg.getStringList(opt.getSection(), opt.getSubSection(), opt.getKey())));
-        List<String> expectedSet = new ArrayList<String>();
-        expectedSet.addAll((Set<String>) opt.getExpected());
-        expectedSet.removeAll(values);
-        values.addAll(expectedSet);
-        cfg.setStringList(opt.getSection(), opt.getSubSection(), opt.getKey(), values);
-      }
+  private static RequiredOption<String> sshAdvertisedAddress(Gerrit gerrit) {
+    int port = gerrit.getSpec().getSshdAdvertisedReadPort();
+    if (port == 0) {
+      port = gerrit.getSpec().getService().getSshPort();
     }
-  }
-
-  public List<RequiredOption> getRequiredOptions() {
-    return requiredOptions;
+    return new RequiredOption<String>(
+        "sshd", "advertisedAddress", gerrit.getSpec().getIngress().getHost() + ":" + port);
   }
 }

@@ -20,7 +20,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 
 @Singleton
-public class FileSystemKeyStoreProvider implements KeyStoreProvider {
+public class FileSystemKeyStoreProvider extends AbstractKeyStoreProvider {
   static final String KEYSTORE_PATH = "/operator/keystore.jks";
   static final String KEYSTORE_PWD_FILE = "/operator/keystore.password";
 

@@ -96,7 +96,7 @@ class GerritInit:
             LOG.info("Plugins were installed or updated. Initializing.")
             return True
 
-        if self.config.packaged_plugins.difference(self.installed_plugins):
+        if self.config.get_plugin_names().difference(self.installed_plugins):
             LOG.info("Reininitializing site to install additional plugins.")
             return True
 
@@ -111,7 +111,7 @@ class GerritInit:
             return
 
         if os.path.exists(target):
-            if os.path.isdir(target):
+            if os.path.isdir(target) and not os.path.islink(target):
                 shutil.rmtree(target)
             else:
                 os.remove(target)
@@ -122,6 +122,10 @@ class GerritInit:
         self._ensure_symlink(f"{MNT_PATH}/git", f"{self.site}/git")
         self._ensure_symlink(f"{MNT_PATH}/logs", f"{self.site}/logs")
 
+        mounted_shared_dir = f"{MNT_PATH}/shared"
+        if not self.is_replica and os.path.exists(mounted_shared_dir):
+            self._ensure_symlink(mounted_shared_dir, f"{self.site}/shared")
+
         index_type = self.gerrit_config.get("index.type", default=IndexType.LUCENE.name)
         if IndexType[index_type.upper()] is IndexType.ELASTICSEARCH:
             self._ensure_symlink(f"{MNT_PATH}/index", f"{self.site}/index")
@@ -129,23 +133,21 @@ class GerritInit:
         data_dir = f"{self.site}/data"
         if os.path.exists(data_dir):
             for file_or_dir in os.listdir(data_dir):
-                if (
-                    os.path.isdir(file_or_dir)
-                    and os.path.islink(file_or_dir)
-                    and not os.path.exists(os.readlink(file_or_dir))
+                abs_path = os.path.join(data_dir, file_or_dir)
+                if os.path.islink(abs_path) and not os.path.exists(
+                    os.path.realpath(abs_path)
                 ):
-                    os.unlink(file_or_dir)
+                    os.unlink(abs_path)
         else:
             os.makedirs(data_dir)
 
         mounted_data_dir = f"{MNT_PATH}/data"
         if os.path.exists(mounted_data_dir):
             for file_or_dir in os.listdir(mounted_data_dir):
-                if os.path.isdir(file_or_dir):
-                    self._ensure_symlink(
-                        os.path.join(mounted_data_dir, file_or_dir),
-                        os.path.join(data_dir, file_or_dir),
-                    )
+                abs_path = os.path.join(data_dir, file_or_dir)
+                abs_mounted_path = os.path.join(mounted_data_dir, file_or_dir)
+                if os.path.isdir(abs_mounted_path):
+                    self._ensure_symlink(abs_mounted_path, abs_path)
 
     def _symlink_configuration(self):
         etc_dir = f"{self.site}/etc"
@@ -162,6 +164,16 @@ class GerritInit:
                             os.path.join(f"{MNT_PATH}/etc/{config_type}", file_or_dir),
                             os.path.join(etc_dir, file_or_dir),
                         )
+
+    def _remove_auto_generated_ssh_keys(self):
+        etc_dir = f"{self.site}/etc"
+        if not os.path.exists(etc_dir):
+            return
+
+        for file_or_dir in os.listdir(etc_dir):
+            full_path = os.path.join(etc_dir, file_or_dir)
+            if os.path.isfile(full_path) and file_or_dir.startswith("ssh_host_"):
+                os.remove(full_path)
 
     def execute(self):
         if not self.is_replica:
@@ -206,6 +218,7 @@ class GerritInit:
                 )
                 sys.exit(1)
 
+            self._remove_auto_generated_ssh_keys()
             self._symlink_configuration()
 
             if self.is_replica:

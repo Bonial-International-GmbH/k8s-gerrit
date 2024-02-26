@@ -103,14 +103,6 @@ spec:
       - name: gerrit-init
         image: {{ template "registry" . }}{{ .Values.gerrit.images.gerritInit }}:{{ .Values.images.version }}
         imagePullPolicy: {{ .Values.images.imagePullPolicy }}
-        command:
-          - python3
-          - /var/tools/gerrit-initializer
-          - -s
-          - /var/gerrit
-          - -c
-          - /var/config/gerrit-init.yaml
-          - init
         env:
         - name: POD_NAME
           valueFrom:
@@ -132,7 +124,7 @@ spec:
           mountPath: "/etc/idmapd.conf"
           subPath: idmapd.conf
         {{- end }}
-        {{- if and .Values.gerrit.plugins.cache.enabled .Values.gerrit.plugins.downloaded }}
+        {{- if and .Values.gerrit.pluginManagement.cache.enabled }}
         - name: gerrit-plugin-cache
           mountPath: "/var/mnt/plugins"
         {{- end }}
@@ -207,23 +199,32 @@ spec:
           httpGet:
             path: /config/server/healthcheck~status
             port: gerrit-port
+{{- if .Values.gerrit.probeScheme }}
+            scheme: {{ .Values.gerrit.probeScheme }}
+{{- end }}
 {{ toYaml .Values.gerrit.livenessProbe | indent 10 }}
         readinessProbe:
           httpGet:
             path: /config/server/healthcheck~status
             port: gerrit-port
+{{- if .Values.gerrit.probeScheme }}
+            scheme: {{ .Values.gerrit.probeScheme }}
+{{- end }}
 {{ toYaml .Values.gerrit.readinessProbe | indent 10 }}
         startupProbe:
           httpGet:
             path: /config/server/healthcheck~status
             port: gerrit-port
+{{- if .Values.gerrit.probeScheme }}
+            scheme: {{ .Values.gerrit.probeScheme }}
+{{- end }}
 {{ toYaml .Values.gerrit.startupProbe | indent 10 }}
       volumes:
       {{ if not .Values.gerrit.persistence.enabled -}}
       - name: gerrit-site
         emptyDir: {}
       {{- end }}
-      {{- if and .Values.gerrit.plugins.cache.enabled .Values.gerrit.plugins.downloaded }}
+      {{- if and .Values.gerrit.pluginManagement.cache.enabled }}
       - name: gerrit-plugin-cache
         persistentVolumeClaim:
           claimName: {{ .Release.Name }}-plugin-cache-pvc

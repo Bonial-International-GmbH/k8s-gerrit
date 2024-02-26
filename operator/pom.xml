@@ -6,19 +6,23 @@
 
 	<groupId>com.google.gerrit.operator</groupId>
 	<artifactId>operator</artifactId>
-	<version>0.1-SNAPSHOT</version>
+	<version>${revision}</version>
 
 	<name>Gerrit Kubernetes Operator</name>
 	<description>Provisions and operates Gerrit instances in Kubernetes</description>
 	<packaging>jar</packaging>
 
 	<properties>
-		<fabric8.version>6.2.0</fabric8.version>
+		<revision>1.0.0-SNAPSHOT</revision>
+
+		<fabric8.version>6.6.2</fabric8.version>
 		<flogger.version>0.7.4</flogger.version>
-		<javaoperatorsdk.version>4.2.4</javaoperatorsdk.version>
+		<guice.version>5.1.0</guice.version>
+		<javaoperatorsdk.version>4.3.3</javaoperatorsdk.version>
 		<jetty.version>11.0.15</jetty.version>
-		<maven.compiler.source>11</maven.compiler.source>
-		<maven.compiler.target>11</maven.compiler.target>
+		<lombok.version>1.18.28</lombok.version>
+		<maven.compiler.source>17</maven.compiler.source>
+		<maven.compiler.target>17</maven.compiler.target>
 		<docker.registry>docker.io</docker.registry>
 		<docker.org>k8sgerrit</docker.org>
 
@@ -47,7 +51,7 @@
 									</container>
 									<containerizingMode>packaged</containerizingMode>
 									<from>
-										<image>gcr.io/distroless/java:11</image>
+										<image>gcr.io/distroless/java17-debian12</image>
 									</from>
 									<to>
 										<image>${docker.registry}/${docker.org}/gerrit-operator</image>
@@ -170,6 +174,17 @@
 			<scope>provided</scope>
 		</dependency>
 		<dependency>
+			<groupId>io.fabric8</groupId>
+			<artifactId>generator-annotations</artifactId>
+			<version>${fabric8.version}</version>
+		</dependency>
+		<dependency>
+			<groupId>org.projectlombok</groupId>
+			<artifactId>lombok</artifactId>
+			<scope>provided</scope>
+			<version>${lombok.version}</version>
+		</dependency>
+		<dependency>
 			<groupId>org.eclipse.jetty</groupId>
 			<artifactId>jetty-server</artifactId>
 			<version>${jetty.version}</version>
@@ -192,7 +207,12 @@
 		<dependency>
 			<groupId>com.google.inject</groupId>
 			<artifactId>guice</artifactId>
-			<version>5.1.0</version>
+			<version>${guice.version}</version>
+		</dependency>
+		<dependency>
+			<groupId>com.google.inject.extensions</groupId>
+			<artifactId>guice-assistedinject</artifactId>
+			<version>${guice.version}</version>
 		</dependency>
 		<dependency>
 			<groupId>org.apache.logging.log4j</groupId>
@@ -221,10 +241,44 @@
 			<version>4.8.0</version>
 			<scope>test</scope>
 		</dependency>
+		<dependency>
+			<groupId>io.fabric8</groupId>
+			<artifactId>kubernetes-server-mock</artifactId>
+			<version>${fabric8.version}</version>
+			<scope>test</scope>
+		</dependency>
+		<dependency>
+			<groupId>com.google.truth</groupId>
+			<artifactId>truth</artifactId>
+			<version>0.32</version>
+		</dependency>
+		<dependency>
+			<groupId>org.junit.jupiter</groupId>
+			<artifactId>junit-jupiter-params</artifactId>
+			<version>5.9.2</version>
+			<scope>test</scope>
+		</dependency>
 	</dependencies>
 
 	<build>
 		<plugins>
+			<plugin>
+				<groupId>io.fabric8</groupId>
+				<artifactId>java-generator-maven-plugin</artifactId>
+				<version>${fabric8.version}</version>
+				<configuration>
+					<source>${project.basedir}/src/main/resources/crd/emissary-crds.yaml</source>
+					<!-- Generate sundrio @Buildable annotations that generate Builder classes-->
+					<extraAnnotations>true</extraAnnotations>
+				</configuration>
+				<executions>
+					<execution>
+						<goals>
+							<goal>generate</goal>
+						</goals>
+					</execution>
+				</executions>
+			</plugin>
 			<plugin>
 				<groupId>com.spotify.fmt</groupId>
 				<artifactId>fmt-maven-plugin</artifactId>
@@ -268,14 +322,56 @@
 							</container>
 							<containerizingMode>packaged</containerizingMode>
 							<from>
-								<image>gcr.io/distroless/java:11</image>
+								<image>gcr.io/distroless/java17-debian12</image>
 							</from>
 							<to>
 								<image>gerrit-operator</image>
+								<tags>${revision}</tags>
 							</to>
 						</configuration>
 					</execution>
 				</executions>
+			</plugin>
+			<plugin>
+				<artifactId>maven-resources-plugin</artifactId>
+				<version>3.3.1</version>
+				<executions>
+					<execution>
+						<id>copy-crds</id>
+						<phase>package</phase>
+						<goals>
+							<goal>copy-resources</goal>
+						</goals>
+						<configuration>
+							<outputDirectory>../crd/current</outputDirectory>
+							<resources>
+								<resource>
+									<directory>target/classes/META-INF/fabric8</directory>
+									<includes>
+										<include>*-v1.yml</include>
+									</includes>
+								</resource>
+							</resources>
+						</configuration>
+					</execution>
+				</executions>
+			</plugin>
+			<plugin>
+				<groupId>org.codehaus.mojo</groupId>
+				<artifactId>exec-maven-plugin</artifactId>
+				<version>3.1.1</version>
+				<executions>
+					<execution>
+						<id>combine-crd-versions</id>
+						<phase>package</phase>
+						<goals>
+							<goal>exec</goal>
+						</goals>
+					</execution>
+				</executions>
+				<configuration>
+					<executable>tools/combineCRDVersions</executable>
+				</configuration>
 			</plugin>
 			<plugin>
 				<groupId>org.apache.maven.plugins</groupId>
@@ -292,6 +388,27 @@
 					</includes>
 					<rerunFailingTestsCount>1</rerunFailingTestsCount>
 				</configuration>
+			</plugin>
+			<plugin>
+				<groupId>org.codehaus.mojo</groupId>
+				<artifactId>build-helper-maven-plugin</artifactId>
+				<version>3.4.0</version>
+				<executions>
+					<execution>
+						<id>add-source</id>
+						<phase>generate-sources</phase>
+						<goals>
+							<goal>add-source</goal>
+						</goals>
+						<configuration>
+							<sources>
+								<source>${project.build.directory}/generated-sources/annotations/</source>
+								<source>${project.build.directory}/generated-sources/java/</source>
+								<source>${project.build.directory}/generated-test-sources/java/</source>
+							</sources>
+						</configuration>
+					</execution>
+				</executions>
 			</plugin>
 		</plugins>
 	</build>

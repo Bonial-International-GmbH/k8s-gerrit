@@ -21,6 +21,9 @@ import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.notNullValue;
 
 import com.google.common.flogger.FluentLogger;
+import com.google.gerrit.k8s.operator.cluster.dependent.NfsIdmapdConfigMap;
+import com.google.gerrit.k8s.operator.cluster.dependent.SharedPVC;
+import com.google.gerrit.k8s.operator.network.IngressType;
 import com.google.gerrit.k8s.operator.test.AbstractGerritOperatorE2ETest;
 import io.fabric8.kubernetes.api.model.ConfigMap;
 import io.fabric8.kubernetes.api.model.PersistentVolumeClaim;
@@ -30,8 +33,8 @@ public class GerritClusterE2E extends AbstractGerritOperatorE2ETest {
   private static final FluentLogger logger = FluentLogger.forEnclosingClass();
 
   @Test
-  void testGitRepositoriesPvcCreated() {
-    logger.atInfo().log("Waiting max 1 minutes for the git repositories pvc to be created.");
+  void testSharedPvcCreated() {
+    logger.atInfo().log("Waiting max 1 minutes for the shared pvc to be created.");
     await()
         .atMost(1, MINUTES)
         .untilAsserted(
@@ -40,24 +43,7 @@ public class GerritClusterE2E extends AbstractGerritOperatorE2ETest {
                   client
                       .persistentVolumeClaims()
                       .inNamespace(operator.getNamespace())
-                      .withName(GitRepositoriesPVC.REPOSITORY_PVC_NAME)
-                      .get();
-              assertThat(pvc, is(notNullValue()));
-            });
-  }
-
-  @Test
-  void testGerritLogsPvcCreated() {
-    logger.atInfo().log("Waiting max 1 minutes for the gerrit logs pvc to be created.");
-    await()
-        .atMost(1, MINUTES)
-        .untilAsserted(
-            () -> {
-              PersistentVolumeClaim pvc =
-                  client
-                      .persistentVolumeClaims()
-                      .inNamespace(operator.getNamespace())
-                      .withName(GerritLogsPVC.LOGS_PVC_NAME)
+                      .withName(SharedPVC.SHARED_PVC_NAME)
                       .get();
               assertThat(pvc, is(notNullValue()));
             });
@@ -79,5 +65,10 @@ public class GerritClusterE2E extends AbstractGerritOperatorE2ETest {
                       .get();
               assertThat(cm, is(notNullValue()));
             });
+  }
+
+  @Override
+  protected IngressType getIngressType() {
+    return IngressType.INGRESS;
   }
 }

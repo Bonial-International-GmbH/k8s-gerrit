@@ -19,7 +19,7 @@ import pytest
 import utils
 
 
-JAVA_VER = 11
+JAVA_VER = 17
 
 
 @pytest.fixture(scope="module")
@@ -78,14 +78,6 @@ def test_gerrit_base_war_contains_gerrit(container_run):
     assert exit_code == 0
     output = output.strip().decode("utf-8")
     assert re.search(re.compile("gerrit version.*"), output)
-
-
-@pytest.mark.docker
-@pytest.mark.structure
-def test_gerrit_base_contains_required_plugins(container_run, required_plugins):
-    for plugin in required_plugins:
-        exit_code, _ = container_run.exec_run(f"test -f /var/plugins/{plugin}.jar")
-        assert exit_code == 0
 
 
 @pytest.mark.docker

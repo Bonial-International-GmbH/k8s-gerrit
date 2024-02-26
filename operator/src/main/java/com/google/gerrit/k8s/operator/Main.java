@@ -14,6 +14,7 @@
 
 package com.google.gerrit.k8s.operator;
 
+import com.google.gerrit.k8s.operator.admission.ValidationWebhookConfigs;
 import com.google.gerrit.k8s.operator.server.HttpServer;
 import com.google.inject.Guice;
 import com.google.inject.Injector;
@@ -23,7 +24,8 @@ public class Main {
 
   public static void main(String[] args) throws Exception {
     Injector injector = Guice.createInjector(Stage.PRODUCTION, new OperatorModule());
-    injector.getInstance(GerritOperator.class).start();
     injector.getInstance(HttpServer.class).start();
+    injector.getInstance(ValidationWebhookConfigs.class).apply();
+    injector.getInstance(GerritOperator.class).start();
   }
 }

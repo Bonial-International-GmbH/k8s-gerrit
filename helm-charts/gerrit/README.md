@@ -107,11 +107,15 @@ For information of how a `StorageClass` is configured in Kubernetes, read the
 | `storageClasses.default.provisioner` | Provisioner of the StorageClass | `kubernetes.io/aws-ebs` |
 | `storageClasses.default.reclaimPolicy` | Whether to `Retain` or `Delete` volumes, when they become unbound | `Delete` |
 | `storageClasses.default.parameters` | Parameters for the provisioner | `parameters.type: gp2`, `parameters.fsType: ext4` |
+| `storageClasses.default.mountOptions` | The mount options of the default StorageClass | `[]` |
+| `storageClasses.default.allowVolumeExpansion` | Whether to allow volume expansion. | `false` |
 | `storageClasses.shared.name` | The name of the shared StorageClass (RWM) | `shared-storage` |
 | `storageClasses.shared.create` | Whether to create the StorageClass | `false` |
 | `storageClasses.shared.provisioner` | Provisioner of the StorageClass | `nfs` |
 | `storageClasses.shared.reclaimPolicy` | Whether to `Retain` or `Delete` volumes, when they become unbound | `Delete` |
 | `storageClasses.shared.parameters` | Parameters for the provisioner | `parameters.mountOptions: vers=4.1` |
+| `storageClasses.shared.mountOptions` | The mount options of the shared StorageClass | `[]` |
+| `storageClasses.shared.allowVolumeExpansion` | Whether to allow volume expansion. | `false` |
 
 ### Network policies
 
@@ -306,6 +310,7 @@ future.
 |                    |                                                               | `limits.memory: 6Gi` |
 | `gerrit.persistence.enabled` | Whether to persist the Gerrit site | `true` |
 | `gerrit.persistence.size` | Storage size for persisted Gerrit site | `10Gi` |
+| `gerrit.probeScheme` | Scheme for probes, for example HTTPS | `nil` |
 | `gerrit.livenessProbe` | Configuration of the liveness probe timings | `{initialDelaySeconds: 30, periodSeconds: 5}` |
 | `gerrit.readinessProbe` | Configuration of the readiness probe timings | `{initialDelaySeconds: 5, periodSeconds: 1}` |
 | `gerrit.startupProbe` | Configuration of the startup probe timings | `{initialDelaySeconds: 10, periodSeconds: 5}` |
@@ -321,14 +326,17 @@ future.
 | `gerrit.service.ssh.port` | Port over which to expose SSH | `29418` |
 | `gerrit.keystore` | base64-encoded Java keystore (`cat keystore.jks \| base64`) to be used by Gerrit, when using SSL | `nil` |
 | `gerrit.index.type` | Index type used by Gerrit (either `lucene` or `elasticsearch`) | `lucene` |
-| `gerrit.plugins.packaged` | List of Gerrit plugins that are packaged into the Gerrit-war-file to install | `["commit-message-length-validator", "download-commands", "replication", "reviewnotes"]` |
-| `gerrit.plugins.downloaded` | List of Gerrit plugins that will be downloaded | `nil` |
-| `gerrit.plugins.downloaded[0].name` | Name of plugin | `nil` |
-| `gerrit.plugins.downloaded[0].url` | Download url of plugin | `nil` |
-| `gerrit.plugins.downloaded[0].sha1` | SHA1 sum of plugin jar used to ensure file integrity and version (optional) | `nil` |
-| `gerrit.plugins.installAsLibrary` | List of plugins, which should be symlinked to the lib-dir in the Gerrit site (have to be in either `..downloaded` or `..packaged`) | `[]` |
-| `gerrit.plugins.cache.enabled` | Whether to cache downloaded plugins | `false` |
-| `gerrit.plugins.cache.size` | Size of the volume used to store cached plugins | `1Gi` |
+| `gerrit.pluginManagement.plugins` | List of Gerrit plugins to install | `[]` |
+| `gerrit.pluginManagement.plugins[0].name` | Name of plugin | `nil` |
+| `gerrit.pluginManagement.plugins[0].url` | Download url of plugin. If given the plugin will be downloaded, otherwise it will be installed from the gerrit.war-file. | `nil` |
+| `gerrit.pluginManagement.plugins[0].sha1` | SHA1 sum of plugin jar used to ensure file integrity and version (optional) | `nil` |
+| `gerrit.pluginManagement.plugins[0].installAsLibrary` | Whether the plugin should be symlinked to the lib-dir in the Gerrit site. | `nil` |
+| `gerrit.pluginManagement.libs` | List of Gerrit library modules to install | `[]` |
+| `gerrit.pluginManagement.libs[0].name` | Name of the lib module | `nil` |
+| `gerrit.pluginManagement.libs[0].url` | Download url of lib module. | `nil` |
+| `gerrit.pluginManagement.libs[0].sha1` | SHA1 sum of plugin jar used to ensure file integrity and version | `nil` |
+| `gerrit.pluginManagement.cache.enabled` | Whether to cache downloaded plugins | `false` |
+| `gerrit.pluginManagement.cache.size` | Size of the volume used to store cached plugins | `1Gi` |
 | `gerrit.priorityClassName` | Name of the PriorityClass to apply to the master pod | `nil` |
 | `gerrit.etc.config` | Map of config files (e.g. `gerrit.config`) that will be mounted to `$GERRIT_SITE/etc`by a ConfigMap | `{gerrit.config: ..., replication.config: ...}`[see here](#Gerrit-config-files) |
 | `gerrit.etc.secret` | Map of config files (e.g. `secure.config`) that will be mounted to `$GERRIT_SITE/etc`by a Secret | `{secure.config: ...}` [see here](#Gerrit-config-files) |
