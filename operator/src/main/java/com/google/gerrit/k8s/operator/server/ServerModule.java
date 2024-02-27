@@ -16,7 +16,11 @@ package com.google.gerrit.k8s.operator.server;
 
 import static com.google.gerrit.k8s.operator.server.FileSystemKeyStoreProvider.KEYSTORE_PATH;
 
+import com.google.gerrit.k8s.operator.admission.servlet.GerritAdmissionWebhook;
+import com.google.gerrit.k8s.operator.admission.servlet.GerritClusterAdmissionWebhook;
+import com.google.gerrit.k8s.operator.admission.servlet.GitGcAdmissionWebhook;
 import com.google.inject.AbstractModule;
+import com.google.inject.multibindings.Multibinder;
 import java.io.File;
 
 public class ServerModule extends AbstractModule {
@@ -27,5 +31,10 @@ public class ServerModule extends AbstractModule {
       bind(KeyStoreProvider.class).to(GeneratedKeyStoreProvider.class);
     }
     bind(HttpServer.class);
+    Multibinder<AdmissionWebhookServlet> admissionWebhookServlets =
+        Multibinder.newSetBinder(binder(), AdmissionWebhookServlet.class);
+    admissionWebhookServlets.addBinding().to(GerritClusterAdmissionWebhook.class);
+    admissionWebhookServlets.addBinding().to(GitGcAdmissionWebhook.class);
+    admissionWebhookServlets.addBinding().to(GerritAdmissionWebhook.class);
   }
 }

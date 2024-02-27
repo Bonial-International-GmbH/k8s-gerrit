@@ -19,13 +19,15 @@ import yaml
 
 class InitConfig:
     def __init__(self):
-        self.downloaded_plugins = []
+        self.plugins = []
+        self.libs = []
         self.plugin_cache_enabled = False
-        self.packaged_plugins = set()
-        self.install_as_library = set()
         self.plugin_cache_dir = None
 
         self.ca_cert_path = True
+
+        self.is_ha = False
+        self.refdb = False
 
     def parse(self, config_file):
         if not os.path.exists(config_file):
@@ -37,23 +39,52 @@ class InitConfig:
         if config is None:
             raise ValueError(f"Invalid config-file: {config_file}")
 
-        if "downloadedPlugins" in config:
-            self.downloaded_plugins = config["downloadedPlugins"]
-        if "packagedPlugins" in config:
-            self.packaged_plugins = set(config["packagedPlugins"])
-        if "installAsLibrary" in config:
-            self.install_as_library = set(config["installAsLibrary"])
+        if "plugins" in config:
+            self.plugins = config["plugins"]
+        if "libs" in config:
+            self.libs = config["libs"]
+        # DEPRECATED: `pluginCache` was deprecated in favor of `pluginCacheEnabled`
         if "pluginCache" in config:
             self.plugin_cache_enabled = config["pluginCache"]
+        if "pluginCacheEnabled" in config:
+            self.plugin_cache_enabled = config["pluginCacheEnabled"]
         if "pluginCacheDir" in config and config["pluginCacheDir"]:
             self.plugin_cache_dir = config["pluginCacheDir"]
 
         if "caCertPath" in config:
             self.ca_cert_path = config["caCertPath"]
 
+        self.is_ha = "highAvailability" in config and config["highAvailability"]
+        if "refdb" in config:
+            self.refdb = config["refdb"]
+
         return self
 
-    def get_all_configured_plugins(self):
-        plugins = set(self.packaged_plugins)
-        plugins.update([p["name"] for p in self.downloaded_plugins])
-        return plugins
+    def get_plugins(self):
+        return self.plugins
+
+    def get_plugin_names(self):
+        return set([p["name"] for p in self.plugins])
+
+    def get_libs(self):
+        return self.libs
+
+    def get_lib_names(self):
+        return set([p["name"] for p in self.libs])
+
+    def get_packaged_plugins(self):
+        return list(filter(lambda x: "url" not in x, self.plugins))
+
+    def get_downloaded_plugins(self):
+        return list(filter(lambda x: "url" in x, self.plugins))
+
+    def get_plugins_installed_as_lib(self):
+        return [
+            lib["name"]
+            for lib in list(
+                filter(
+                    lambda x: "installAsLibrary" in x and x["installAsLibrary"],
+                    self.plugins,
+                )
+            )
+        ]

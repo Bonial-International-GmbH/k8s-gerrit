@@ -18,7 +18,11 @@ usage()
   echo "Usage: $0 [ -s ProjectName ] [ -p ProjectName ] [ -b ProjectName ]"
   echo "-s ProjectName     : skip this project"
   echo "-p ProjectName     : run git-gc for this project"
-  echo "-b ProjectName     : do not write bitmaps for this project"
+  echo "-B                 : do not write bitmaps"
+  echo "-R                 : skip packing refs, use this to reduce lock contention"
+  echo "                     on packed-refs which is frequently locked by Gerrit"
+  echo "                     packed-refs updates on busy repos"
+  echo "-P                 : preserve packs"
   echo ""
   echo "By default the script will run git-gc for all projects unless \"-p\" option is provided"
   echo
@@ -63,6 +67,14 @@ gc_options()
   fi
 }
 
+set_gc_command() {
+  if [ $PRESERVE_PACKS_OPT -eq 0 ] ; then
+    GC_COMMAND="gc"
+  else
+    GC_COMMAND="gc-preserve"
+  fi
+}
+
 log_opts()
 {
   if test -z $1 ; then
@@ -93,9 +105,9 @@ log()
 
 gc_all_projects()
 {
-  for d in $(cd $TOP && find . -type d -name "*.git" | cut -c3- -)
+  find $TOP -type d -path "*.git" -prune -o -name "*.git" | while IFS= read d
   do
-    gc_project "$d"
+    gc_project "${d#$TOP/}"
   done
 }
 
@@ -109,21 +121,21 @@ gc_specified_projects()
 
 gc_project()
 {
-  PROJECT_NAME=$1
-  PROJECT_DIR=$TOP/$PROJECT_NAME
+  PROJECT_NAME="$@"
+  PROJECT_DIR="$TOP/$PROJECT_NAME"
 
-  if [[ ! -d $PROJECT_DIR ]]; then
+  if [[ ! -d "$PROJECT_DIR" ]]; then
     OUT=$(date +"%D %r Failed: Directory does not exist: $PROJECT_DIR") && log "$OUT"
     return 1
   fi
 
-  OPTS=$(gc_options $PROJECT_DIR)
+  OPTS=$(gc_options "$PROJECT_DIR")
   LOG_OPTS=$(log_opts $OPTS)
 
   # Check if git-gc for this project has to be skipped
   if [ $SKIP_PROJECTS_OPT -eq 1 ]; then
-    for SKIP_PROJECT in "${SKIP_PROJECTS}"; do
-      if [ "$SKIP_PROJECT" == "$PROJECT_NAME" ] ; then
+    for SKIP_PROJECT in ${SKIP_PROJECTS}; do
+      if [ $SKIP_PROJECT == "$PROJECT_NAME" ] ; then
         OUT=$(date +"%D %r Skipped: $PROJECT_NAME") && log "$OUT"
         return 0
       fi
@@ -133,11 +145,7 @@ gc_project()
   # Check if writing bitmaps for this project has to be disabled
   WRITEBITMAPS='true';
   if [ $DONOT_WRITE_BITMAPS_OPT -eq 1 ]; then
-    for BITMAP_PROJECT in "${DONOT_WRITE_BITMAPS}"; do
-      if [ "$BITMAP_PROJECT" == "$PROJECT_NAME" ] ; then
-        WRITEBITMAPS='false';
-      fi
-    done
+    WRITEBITMAPS='false';
   fi
 
   OUT=$(date +"%D %r Started: $PROJECT_NAME$LOG_OPTS") && log "$OUT"
@@ -160,14 +168,31 @@ gc_project()
   git --git-dir="$PROJECT_DIR" config pack.window 250
   git --git-dir="$PROJECT_DIR" config pack.depth 50
 
-  OUT=$(git -c gc.auto=6700 -c gc.autoPackLimit=4 --git-dir="$PROJECT_DIR" gc --auto --prune $OPTS || date +"%D %r Failed: $PROJECT_NAME") \
+  OUT=$(git $GC_CONFIG --git-dir="$PROJECT_DIR" "$GC_COMMAND" --auto --prune $OPTS \
+        || date +"%D %r Failed: $PROJECT_NAME") \
     && log "$OUT"
 
-  (find "$PROJECT_DIR/refs/changes" -type d | xargs rmdir;
-   find "$PROJECT_DIR/refs/changes" -type d | xargs rmdir
-  ) 2>/dev/null
+  delete_empty_ref_dirs "$PROJECT_DIR"
+
+  OUT=$(find "$PROJECT_DIR/objects" -name 'incoming_*.pack' -type f -mtime +14 -delete) && \
+        log "pruning stale 'incoming_*.pack' files older than 14 days:\n$OUT"
+
+  if [ $DONOT_PACK_REFS_OPT -eq 0 ] ; then
+    local looseRefCount
+    looseRefCount=$(find "$PROJECT_DIR/refs/" -type f | wc -l)
+    if [ $looseRefCount -gt 10 ] ; then
+      OUT=$(git --git-dir="$PROJECT_DIR" pack-refs --all) && \
+          log "Found $looseRefCount loose refs -> pack all refs"
+    fi
+  fi
 
   OUT=$(date +"%D %r Finished: $PROJECT_NAME$LOG_OPTS") && log "$OUT"
+}
+
+delete_empty_ref_dirs()
+{
+  PROJECT_DIR="$1"
+  find "$PROJECT_DIR/refs" -type d -empty -mindepth 2 -mmin +60 -delete
 }
 
 ###########################
@@ -176,12 +201,15 @@ gc_project()
 
 SKIP_PROJECTS=
 GC_PROJECTS=
-DONOT_WRITE_BITMAPS=
 SKIP_PROJECTS_OPT=0
 GC_PROJECTS_OPT=0
 DONOT_WRITE_BITMAPS_OPT=0
+DONOT_PACK_REFS_OPT=0
+PRESERVE_PACKS_OPT=0
+# set auto gc options on the fly when git gc is triggered by cron
+GC_CONFIG="-c gc.auto=6700 -c gc.autoPackLimit=4"
 
-while getopts 's:p:b:?h' c
+while getopts 's:p:BRP?h' c
 do
   case $c in
     s)
@@ -192,20 +220,28 @@ do
       GC_PROJECTS="${GC_PROJECTS} ${OPTARG}.git"
       GC_PROJECTS_OPT=1
       ;;
-    b)
-      DONOT_WRITE_BITMAPS="${DONOT_WRITE_BITMAPS} ${OPTARG}.git"
+    B)
       DONOT_WRITE_BITMAPS_OPT=1
       ;;
-    h|?)
+    R)
+      GC_CONFIG="$GC_CONFIG -c gc.packRefs=false"
+      DONOT_PACK_REFS_OPT=1
+      ;;
+    P)
+      PRESERVE_PACKS_OPT=1
+      ;;
+    h|?|*)
       usage
       ;;
   esac
 done
 
-test $# -eq 0 || usage
+shift $(($OPTIND - 1))
+test $# -gt 0 && usage
 
 TOP=/var/gerrit/git
 LOG=/var/log/git/gc.log
+set_gc_command
 
 OUT=$(date +"%D %r Started") && log "$OUT"
 

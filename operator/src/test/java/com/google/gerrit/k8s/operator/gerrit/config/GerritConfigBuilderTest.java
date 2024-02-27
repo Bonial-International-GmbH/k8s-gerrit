@@ -18,6 +18,10 @@ import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.google.gerrit.k8s.operator.api.model.gerrit.Gerrit;
+import com.google.gerrit.k8s.operator.api.model.gerrit.GerritSpec;
+import com.google.gerrit.k8s.operator.api.model.shared.IngressConfig;
+import java.util.Map;
 import java.util.Set;
 import org.assertj.core.util.Arrays;
 import org.eclipse.jgit.lib.Config;
@@ -27,8 +31,9 @@ public class GerritConfigBuilderTest {
 
   @Test
   public void emptyGerritConfigContainsAllPresetConfiguration() {
-    GerritConfigBuilder cfgBuilder = new GerritConfigBuilder();
-    Config cfg = cfgBuilder.withConfig("").build();
+    Gerrit gerrit = createGerrit("");
+    ConfigBuilder cfgBuilder = new GerritConfigBuilder(gerrit);
+    Config cfg = cfgBuilder.build();
     for (RequiredOption<?> opt : cfgBuilder.getRequiredOptions()) {
       if (opt.getExpected() instanceof String || opt.getExpected() instanceof Boolean) {
         assertTrue(
@@ -44,21 +49,36 @@ public class GerritConfigBuilderTest {
 
   @Test
   public void invalidConfigValueIsRejected() {
-    assertThrows(
-        IllegalStateException.class,
-        () -> new GerritConfigBuilder().withConfig("[gerrit]\n  basePath = invalid").build());
+    Gerrit gerrit = createGerrit("[gerrit]\n  basePath = invalid");
+    assertThrows(IllegalStateException.class, () -> new GerritConfigBuilder(gerrit).build());
   }
 
   @Test
   public void validConfigValueIsAccepted() {
-    assertDoesNotThrow(
-        () -> new GerritConfigBuilder().withConfig("[gerrit]\n  basePath = git").build());
+    Gerrit gerrit = createGerrit("[gerrit]\n  basePath = git");
+    assertDoesNotThrow(() -> new GerritConfigBuilder(gerrit).build());
   }
 
   @Test
   public void canonicalWebUrlIsConfigured() {
-    String url = "https://gerrit.example.com";
-    Config cfg = new GerritConfigBuilder().withConfig("").withUrl(url).build();
-    assertTrue(cfg.getString("gerrit", null, "canonicalWebUrl").equals(url));
+    IngressConfig ingressConfig = new IngressConfig();
+    ingressConfig.setEnabled(true);
+    ingressConfig.setHost("gerrit.example.com");
+
+    GerritSpec gerritSpec = new GerritSpec();
+    gerritSpec.setIngress(ingressConfig);
+    Gerrit gerrit = new Gerrit();
+    gerrit.setSpec(gerritSpec);
+    Config cfg = new GerritConfigBuilder(gerrit).build();
+    assertTrue(
+        cfg.getString("gerrit", null, "canonicalWebUrl").equals("http://gerrit.example.com/"));
+  }
+
+  private Gerrit createGerrit(String configText) {
+    GerritSpec gerritSpec = new GerritSpec();
+    gerritSpec.setConfigFiles(Map.of("gerrit.config", configText));
+    Gerrit gerrit = new Gerrit();
+    gerrit.setSpec(gerritSpec);
+    return gerrit;
   }
 }
